@@ -1,20 +1,25 @@
 # Database Configuration
 DATABASE_URL=sqlite+aiosqlite:///./qna_voice.db
 
-# TTS API Keys (for natural, ChatGPT-like voice)
-# Choose one of the following options:
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
 
-# Option 1: ElevenLabs (Recommended - Very natural, ChatGPT-like voice)
-# Get free API key from: https://elevenlabs.io/
+# Audio Configuration
+AUDIO_DIR=static/audio
+
+# ElevenLabs API (Best quality - ChatGPT-like voices)
+# Get your API key from: https://elevenlabs.io/
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 
-# Option 2: OpenAI TTS (ChatGPT voice)
-# Get API key from: https://platform.openai.com/
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Option 3: Azure Speech Service (Microsoft's natural TTS)
-# Get keys from: https://azure.microsoft.com/en-us/services/cognitive-services/speech-services/
+# Azure Cognitive Services (Enterprise quality)
+# Get your key from: https://portal.azure.com/
 AZURE_SPEECH_KEY=your_azure_speech_key_here
-AZURE_SPEECH_REGION=your_azure_region_here
+AZURE_SPEECH_REGION=eastus
 
-# Note: If no API keys are provided, the system will fall back to improved gTTS
+# Gemma API (for text generation)
+GEMMA_API_URL=http://10.80.210.75:1234
+
+# TTS Service Priority (leave empty for auto-detection)
+# Options: elevenlabs, azure, piper
+PREFERRED_TTS_SERVICE=
