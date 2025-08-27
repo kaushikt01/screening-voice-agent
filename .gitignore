@@ -11,3 +11,28 @@ node_modules/
 **/yarn-debug.log*
 **/yarn-error.log*
 **/pnpm-debug.log*
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.venv/
+.venv/
+*.pyc
+*.pyo
+*.pyd
+
+# Local env/config
+.env
+**/.env
+**/.env.local
+
+# FastAPI/Runtime outputs
+v1/static/audio/*.wav
+v1/static/audio/*.mp3
+
+# OS/Editor
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/
