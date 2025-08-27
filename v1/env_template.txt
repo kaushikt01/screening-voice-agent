@@ -18,7 +18,7 @@ AZURE_SPEECH_KEY=your_azure_speech_key_here
 AZURE_SPEECH_REGION=eastus
 
 # Gemma API (for text generation)
-GEMMA_API_URL=http://10.80.210.75:1234
+GEMMA_API_URL=http://192.168.1.6:1234
 
 # TTS Service Priority (leave empty for auto-detection)
 # Options: elevenlabs, azure, piper
