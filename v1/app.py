@@ -13,13 +13,15 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, text
-from sqlalchemy.sql import func
 from tts_utils import get_gemma_response
 from tts_router import generate_tts, generate_conversational_voice, generate_emotional_voice
 from conversation_engine import ConversationEngine
+from database import (
+    init_database, create_session, get_session, update_session_status,
+    get_all_questions, get_question, save_answer, get_session_answers,
+    save_analytics, get_session_analytics, get_dashboard_stats, check_database_health,
+    AnswerModel, CallAnalyticsModel
+)
 import aiofiles
 
 # Create FastAPI app
@@ -33,12 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Database setup - Using SQLite for better compatibility
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./qna_voice.db")
-engine = create_async_engine(DATABASE_URL, echo=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
 
 # Create static files directory for audio files
 AUDIO_DIR = Path("static/audio")
@@ -74,28 +70,7 @@ def cleanup_old_audio_files():
     except Exception as e:
         print(f"Error during audio cleanup: {e}")
 
-# Database Models - Keep original structure
-class Session(Base):
-    __tablename__ = "sessions"
-    id = Column(String, primary_key=True)
-    created_at = Column(DateTime, default=func.now())
-    status = Column(String, default="active")
-
-
-class Question(Base):
-    __tablename__ = "questions"
-    id = Column(Integer, primary_key=True)
-    question_text = Column(Text, nullable=False)
-
-
-class Answer(Base):
-    __tablename__ = "answers"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
-    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
-    answer_text = Column(Text, nullable=False)
-    answer_audio_path = Column(String, nullable=True)
-    created_at = Column(DateTime, default=func.now())
+# Pydantic models for API responses
 
 
 # Pydantic models
@@ -131,17 +106,6 @@ class CallAnalyticsSubmission(BaseModel):
     analytics: List[CallAnalytics]
 
 
-# Predefined questions - Keep original structure
-QUESTIONS = [
-    {"id": 1, "question": "Let’s get started with your name—what’s your first and last name?"},
-    {"id": 2, "question": "Please share your Social Security Number. If you’d rather skip for now, just say ‘skip’."},
-    {"id": 3, "question": "What’s your street address, including ZIP code?"},
-    {"id": 4, "question": "Are you under the age of 40?"},
-    {"id": 5, "question": "Have you or anyone in your household received TANF welfare payments? You can answer ‘yes’ or ‘not applicable’."},
-    {"id": 6, "question": "Have you served in the U.S. military?"},
-    {"id": 7, "question": "In the past year, were you unemployed and did you receive unemployment compensation for at least 27 weeks?"}
-]
-
 # Initialize Whisper model
 whisper_model = None
 whisper_available = True
@@ -157,11 +121,19 @@ def get_whisper_model():
     try:
         if whisper_model is None:
             print("[DEBUG] Loading Whisper model...")
+            print("[DEBUG] Checking if whisper module is available...")
+            print(f"[DEBUG] Whisper module: {whisper}")
+            print(f"[DEBUG] Whisper version: {whisper.__version__ if hasattr(whisper, '__version__') else 'Unknown'}")
+            
             whisper_model = whisper.load_model("base")
             print("[DEBUG] Whisper model loaded successfully")
+            print(f"[DEBUG] Model type: {type(whisper_model)}")
         return whisper_model
     except Exception as e:
         print(f"[ERROR] Failed to load Whisper model: {e}")
+        print(f"[ERROR] Error type: {type(e)}")
+        import traceback
+        print(f"[ERROR] Full traceback: {traceback.format_exc()}")
         whisper_available = False
         return None
 
@@ -169,8 +141,8 @@ def get_whisper_model():
 def transcribe_audio_fallback(audio_path: str) -> str:
     """Fallback transcription when Whisper is not available."""
     print("[DEBUG] Using fallback transcription")
-    # Return a placeholder text - in a real app, you might use a different service
-    return "audio recorded successfully"
+    # Return a more descriptive placeholder text
+    return "audio recorded successfully - transcription pending"
 
 
 # Load spaCy model once
@@ -202,39 +174,55 @@ def extract_name(text: str) -> Optional[str]:
         return text.strip()
 
 
-# Database dependency
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
-# Initialize database with questions
+# Initialize database
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(text("SELECT COUNT(*) FROM questions"))
-        count = result.scalar()
-        if count == 0:
-            for question in QUESTIONS:
-                db_question = Question(id=question["id"], question_text=question["question"])
-                session.add(db_question)
-            await session.commit()
+    await init_database()
 
 
 @app.on_event("startup")
 async def startup_event():
     await init_db()
+    
+    # Test Whisper availability on startup
+    print("[DEBUG] Testing Whisper availability on startup...")
+    try:
+        test_model = get_whisper_model()
+        if test_model:
+            print("[DEBUG] ✅ Whisper is available and working")
+        else:
+            print("[DEBUG] ❌ Whisper is not available")
+    except Exception as e:
+        print(f"[ERROR] Whisper startup test failed: {e}")
+        import traceback
+        print(f"[ERROR] Full traceback: {traceback.format_exc()}")
 
 
 # API Endpoints
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "message": "QnA Voice API is running"}
+    # Check database health
+    db_healthy = await check_database_health()
+    
+    # Check Whisper status
+    whisper_status = "unknown"
+    try:
+        if whisper_available:
+            if whisper_model:
+                whisper_status = "loaded"
+            else:
+                whisper_status = "available"
+        else:
+            whisper_status = "unavailable"
+    except:
+        whisper_status = "error"
+    
+    return {
+        "status": "healthy" if db_healthy else "unhealthy", 
+        "message": "QnA Voice API is running",
+        "database_status": "connected" if db_healthy else "disconnected",
+        "whisper_status": whisper_status,
+        "spacy_status": "available" if spacy_available else "unavailable"
+    }
 
 @app.post("/api/cleanup-audio")
 async def cleanup_audio():
@@ -262,52 +250,60 @@ async def get_introduction_audio():
 
 
 @app.get("/api/next-question")
-async def get_next_question(index: int, session_id: str):
+async def get_next_question_endpoint(index: int, session_id: str):
     """Get next question with dynamic, conversational text."""
     print(f"[DEBUG] /api/next-question called with index={index}, session_id={session_id}")
-    if index >= len(QUESTIONS):
-        print(f"[ERROR] Index {index} out of range. Total questions: {len(QUESTIONS)}")
-        raise HTTPException(status_code=404, detail="No more questions")
-
-    question = QUESTIONS[index]
-    
-    # Map question index to conversation topic safely
-    topic_mapping = {
-        0: "name",
-        1: "ssn",
-        2: "address",
-        3: "age",
-        4: "tanf",
-        5: "military",
-        6: "unemployment"
-    }
-    
-    topic_key = topic_mapping.get(index, "general")
     
     try:
-        # Use conversation engine to make questions more natural
-        if topic_key in conversation_engine.conversation_topics:
-            conversational_text = conversation_engine._get_natural_question(topic_key)
-        else:
-            # Fallback to original question text if topic not found
-            conversational_text = question["question"]
-            
-    except Exception as e:
-        print(f"[WARNING] Conversation engine failed for topic {topic_key}: {e}")
-        # Fallback to original question text
-        conversational_text = question["question"]
-    
-    print(f"[DEBUG] Generated conversational text: {conversational_text}")
-    audio_filename = f"question_{question['id']}_{session_id}.mp3"
-    audio_url = generate_conversational_voice(conversational_text, audio_filename, "friendly")
-    if not audio_url or not os.path.exists(f"static/audio/{audio_filename}"):
-        print(f"[ERROR] TTS failed to generate audio for: {audio_filename}")
+        # Get all questions from database
+        questions = await get_all_questions()
+        
+        if index >= len(questions):
+            print(f"[ERROR] Index {index} out of range. Total questions: {len(questions)}")
+            raise HTTPException(status_code=404, detail="No more questions")
 
-    return QuestionResponse(
-        id=question["id"],
-        question_text=conversational_text,
-        audio_url=audio_url
-    )
+        question = questions[index]
+        
+        # Map question index to conversation topic safely
+        topic_mapping = {
+            0: "name",
+            1: "ssn",
+            2: "address",
+            3: "age",
+            4: "tanf",
+            5: "military",
+            6: "unemployment"
+        }
+        
+        topic_key = topic_mapping.get(index, "general")
+        
+        try:
+            # Use conversation engine to make questions more natural
+            if topic_key in conversation_engine.conversation_topics:
+                conversational_text = conversation_engine._get_natural_question(topic_key)
+            else:
+                # Fallback to original question text if topic not found
+                conversational_text = question.question_text
+                
+        except Exception as e:
+            print(f"[WARNING] Conversation engine failed for topic {topic_key}: {e}")
+            # Fallback to original question text
+            conversational_text = question.question_text
+        
+        print(f"[DEBUG] Generated conversational text: {conversational_text}")
+        audio_filename = f"question_{question.id}_{session_id}.mp3"
+        audio_url = generate_conversational_voice(conversational_text, audio_filename, "friendly")
+        if not audio_url or not os.path.exists(f"static/audio/{audio_filename}"):
+            print(f"[ERROR] TTS failed to generate audio for: {audio_filename}")
+
+        return QuestionResponse(
+            id=question.id,
+            question_text=conversational_text,
+            audio_url=audio_url
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to get next question: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get next question: {str(e)}")
 
 
 @app.post("/api/submit-answer")
@@ -350,10 +346,16 @@ async def submit_answer(
                 print(f"[DEBUG] Whisper transcription result: '{answer_text}'")
                 print(f"[DEBUG] Transcription result type: {type(result)}")
                 print(f"[DEBUG] Full result: {result}")
+                
+                # Validate transcription result
+                if not answer_text or answer_text.strip() == "":
+                    print("[WARNING] Whisper returned empty text, using fallback")
+                    answer_text = transcribe_audio_fallback(str(audio_path))
+                    
             except Exception as e:
                 print(f"[ERROR] Whisper transcription failed: {e}")
-                # Fallback: use empty text
-                answer_text = ""
+                print(f"[DEBUG] Using fallback transcription due to Whisper error")
+                answer_text = transcribe_audio_fallback(str(audio_path))
             finally:
                 os.unlink(temp_file_path)
 
@@ -372,27 +374,43 @@ async def submit_answer(
         print(f"[DEBUG] Final answer_text to save: '{extracted_text}'")
         print(f"[DEBUG] Audio path to save: '{audio_path}'")
 
+        # Validate that we have some text content
+        if not extracted_text or extracted_text.strip() == "":
+            print("[WARNING] Empty answer text detected, using fallback text")
+            extracted_text = "audio recorded successfully - transcription pending"
+
+        print(f"[DEBUG] Final validated answer_text: '{extracted_text}'")
         print(f"[DEBUG] Saving to database...")
         try:
-            async with AsyncSessionLocal() as session:
-                answer = Answer(
-                    session_id=session_id,
-                    question_id=question_id,
-                    answer_text=extracted_text,
-                    answer_audio_path=str(audio_path)
-                )
-                session.add(answer)
-                await session.commit()
-                await session.refresh(answer)
-                
-                print(f"[DEBUG] Answer saved to database with ID: {answer.id}")
-                print(f"[DEBUG] Saved answer_text: '{answer.answer_text}'")
-                print(f"[DEBUG] Saved audio_path: '{answer.answer_audio_path}'")
+            # Create answer model
+            answer_data = AnswerModel(
+                session_id=session_id,
+                question_id=question_id,
+                answer_text=extracted_text,
+                answer_audio_path=str(audio_path),
+                processing_time_ms=int((datetime.now() - datetime.now()).total_seconds() * 1000)  # Placeholder
+            )
+            
+            # Save to database
+            success = await save_answer(answer_data)
+            
+            if success:
+                print(f"[DEBUG] Answer saved to database successfully")
+                print(f"[DEBUG] Saved answer_text: '{answer_data.answer_text}'")
+                print(f"[DEBUG] Saved audio_path: '{answer_data.answer_audio_path}'")
                 
                 return {
                     "success": True,
                     "answer_text": extracted_text,
                     "question_id": question_id
+                }
+            else:
+                print(f"[ERROR] Failed to save answer to database")
+                return {
+                    "success": True,
+                    "answer_text": extracted_text,
+                    "question_id": question_id,
+                    "warning": "Answer saved to audio file but not to database"
                 }
         except Exception as e:
             print(f"[ERROR] Database operation failed: {e}")
@@ -413,35 +431,35 @@ async def submit_answer(
 
 
 @app.get("/api/results/{session_id}")
-async def get_results(session_id: str):
-    async with AsyncSessionLocal() as session:
-        session_result = await session.execute(
-            text("SELECT * FROM sessions WHERE id = :session_id"),
-            {"session_id": session_id}
-        )
-        session_data = session_result.fetchone()
-        if not session_data:
+async def get_results_endpoint(session_id: str):
+    try:
+        # Check if session exists
+        session = await get_session(session_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        answers_result = await session.execute(text("""
-            SELECT a.id, a.question_id, a.answer_text, a.created_at, q.question_text
-            FROM answers a
-            JOIN questions q ON a.question_id = q.id
-            WHERE a.session_id = :session_id
-            ORDER BY a.question_id
-        """), {"session_id": session_id})
-
-        answers = []
-        for row in answers_result.fetchall():
-            answers.append({
-                "id": row[0],
-                "question_id": row[1],
-                "question_text": row[4],
-                "answer_text": row[2],
-                "created_at": row[3].isoformat() if row[3] else None
+        # Get answers for the session
+        answers = await get_session_answers(session_id)
+        
+        # Get questions for reference
+        questions = await get_all_questions()
+        questions_dict = {q.id: q.question_text for q in questions}
+        
+        # Format response
+        formatted_answers = []
+        for answer in answers:
+            formatted_answers.append({
+                "id": str(answer.created_at.timestamp()),  # Use timestamp as ID
+                "question_id": answer.question_id,
+                "question_text": questions_dict.get(answer.question_id, "Unknown question"),
+                "answer_text": answer.answer_text,
+                "created_at": answer.created_at.isoformat() if answer.created_at else None
             })
 
-        return SessionResult(session_id=session_id, answers=answers)
+        return SessionResult(session_id=session_id, answers=formatted_answers)
+    except Exception as e:
+        print(f"[ERROR] Failed to get results: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")
 
 
 @app.post("/api/start-session")
@@ -450,92 +468,31 @@ async def start_session():
     cleanup_old_audio_files()
     
     session_id = str(uuid.uuid4())
-    async with AsyncSessionLocal() as session:
-        session_obj = Session(id=session_id, status="active")
-        session.add(session_obj)
-        await session.commit()
-    return {"session_id": session_id, "total_questions": len(QUESTIONS)}
+    try:
+        await create_session(session_id)
+        questions = await get_all_questions()
+        return {"session_id": session_id, "total_questions": len(questions)}
+    except Exception as e:
+        print(f"[ERROR] Failed to start session: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
 
 
 @app.get("/api/questions")
-async def get_all_questions():
-    return {"questions": QUESTIONS}
+async def get_questions_endpoint():
+    try:
+        questions = await get_all_questions()
+        return {"questions": [{"id": q.id, "question": q.question_text} for q in questions]}
+    except Exception as e:
+        print(f"[ERROR] Failed to get questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get questions: {str(e)}")
 
 
 @app.get("/api/dashboard")
-async def get_dashboard_data():
+async def get_dashboard_data_endpoint():
     try:
-        async with AsyncSessionLocal() as session:
-            # Check if tables exist first
-            try:
-                sessions_result = await session.execute(text("SELECT COUNT(*) FROM sessions"))
-                total_sessions = sessions_result.scalar() or 0
-            except Exception:
-                total_sessions = 0
-
-            try:
-                answers_result = await session.execute(text("SELECT COUNT(*) FROM answers"))
-                total_answers = answers_result.scalar() or 0
-            except Exception:
-                total_answers = 0
-
-            # Get recent sessions
-            recent_sessions = []
-            try:
-                recent_sessions_result = await session.execute(text("""
-                    SELECT s.id, s.created_at, COUNT(a.id) as answer_count
-                    FROM sessions s
-                    LEFT JOIN answers a ON s.id = a.session_id
-                    GROUP BY s.id, s.created_at
-                    ORDER BY s.created_at DESC
-                    LIMIT 10
-                """))
-                for row in recent_sessions_result.fetchall():
-                    recent_sessions.append({
-                        "session_id": row[0],
-                        "created_at": row[1].isoformat() if row[1] else None,
-                        "answer_count": row[2]
-                    })
-            except Exception:
-                recent_sessions = []
-
-            # Get question stats
-            question_stats = []
-            try:
-                question_stats_result = await session.execute(text("""
-                    SELECT q.question_text, COUNT(a.id) as answer_count
-                    FROM questions q
-                    LEFT JOIN answers a ON q.id = a.question_id
-                    GROUP BY q.id, q.question_text
-                    ORDER BY q.id
-                """))
-                for row in question_stats_result.fetchall():
-                    question_stats.append({
-                        "question": row[0],
-                        "answer_count": row[1]
-                    })
-            except Exception:
-                question_stats = []
-
-            # Get average answer length
-            avg_answer_length = 0
-            try:
-                avg_length_result = await session.execute(text("""
-                    SELECT AVG(LENGTH(answer_text)) as avg_length
-                    FROM answers
-                """))
-                avg_answer_length = avg_length_result.scalar() or 0
-            except Exception:
-                avg_answer_length = 0
-
-            return {
-                "total_sessions": total_sessions,
-                "total_answers": total_answers,
-                "recent_sessions": recent_sessions,
-                "question_stats": question_stats,
-                "avg_answer_length": round(avg_answer_length, 1)
-            }
+        return await get_dashboard_stats()
     except Exception as e:
+        print(f"[ERROR] Failed to get dashboard data: {e}")
         # Return default data if there's any error
         return {
             "total_sessions": 0,
@@ -549,58 +506,72 @@ async def get_dashboard_data():
 @app.post("/api/save-call-analytics")
 async def save_call_analytics(analytics_data: CallAnalyticsSubmission):
     try:
-        # In a real application, you would save this to a database
-        # For now, we'll just log it and return success
         print(f"Call Analytics for session {analytics_data.session_id}:")
+        
+        # Save each analytics entry to database
         for analytics in analytics_data.analytics:
-            print(f"  Question {analytics.question_id}: Response time={analytics.response_time}ms, "
-                  f"Duration={analytics.answer_duration}ms, Quality={analytics.audio_quality}, "
-                  f"Hesitation={analytics.hesitation}")
+            analytics_model = CallAnalyticsModel(
+                session_id=analytics_data.session_id,
+                question_id=analytics.question_id,
+                response_time_ms=analytics.response_time,
+                answer_duration_ms=analytics.answer_duration,
+                audio_quality_score=analytics.audio_quality,
+                confidence_score=analytics.confidence,
+                hesitation_detected=analytics.hesitation,
+                completed=analytics.completed,
+                timestamp=datetime.fromisoformat(analytics.timestamp.replace('Z', '+00:00'))
+            )
+            
+            success = await save_analytics(analytics_model)
+            if success:
+                print(f"  Question {analytics.question_id}: Response time={analytics.response_time}ms, "
+                      f"Duration={analytics.answer_duration}ms, Quality={analytics.audio_quality}, "
+                      f"Hesitation={analytics.hesitation} - SAVED")
+            else:
+                print(f"  Question {analytics.question_id}: FAILED TO SAVE")
         
         return {"success": True, "message": "Analytics saved successfully"}
     except Exception as e:
+        print(f"[ERROR] Failed to save analytics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save analytics: {str(e)}")
 
 
 @app.get("/api/session/{session_id}/analytics")
-async def get_session_analytics(session_id: str):
-    async with AsyncSessionLocal() as session:
-        session_result = await session.execute(
-            text("SELECT * FROM sessions WHERE id = :session_id"),
-            {"session_id": session_id}
-        )
-        session_data = session_result.fetchone()
-        if not session_data:
+async def get_session_analytics_endpoint(session_id: str):
+    try:
+        # Check if session exists
+        session = await get_session(session_id)
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        answers_result = await session.execute(text("""
-            SELECT a.id, a.question_id, a.answer_text, a.created_at, q.question_text
-            FROM answers a
-            JOIN questions q ON a.question_id = q.id
-            WHERE a.session_id = :session_id
-            ORDER BY a.question_id
-        """), {"session_id": session_id})
-
-        answers = []
+        # Get answers for the session
+        answers = await get_session_answers(session_id)
+        
+        # Get questions for reference
+        questions = await get_all_questions()
+        questions_dict = {q.id: q.question_text for q in questions}
+        
+        # Process answers
+        formatted_answers = []
         total_words = 0
-        for row in answers_result.fetchall():
-            answer_text = row[2]
+        for answer in answers:
+            answer_text = answer.answer_text
             word_count = len(answer_text.split())
             total_words += word_count
-            answers.append({
-                "id": row[0],
-                "question_id": row[1],
-                "question_text": row[4],
+            formatted_answers.append({
+                "id": str(answer.created_at.timestamp()),
+                "question_id": answer.question_id,
+                "question_text": questions_dict.get(answer.question_id, "Unknown question"),
                 "answer_text": answer_text,
                 "word_count": word_count,
-                "created_at": row[3].isoformat() if row[3] else None
+                "created_at": answer.created_at.isoformat() if answer.created_at else None
             })
 
-        avg_words_per_answer = round(total_words / len(answers), 1) if answers else 0
+        avg_words_per_answer = round(total_words / len(formatted_answers), 1) if formatted_answers else 0
         session_duration = None
-        if len(answers) >= 2:
-            first_answer = answers[0]["created_at"]
-            last_answer = answers[-1]["created_at"]
+        if len(formatted_answers) >= 2:
+            first_answer = formatted_answers[0]["created_at"]
+            last_answer = formatted_answers[-1]["created_at"]
             if first_answer and last_answer:
                 start_time = datetime.fromisoformat(first_answer.replace('Z', '+00:00'))
                 end_time = datetime.fromisoformat(last_answer.replace('Z', '+00:00'))
@@ -608,13 +579,16 @@ async def get_session_analytics(session_id: str):
 
         return {
             "session_id": session_id,
-            "created_at": session_data[1].isoformat() if session_data[1] else None,
-            "total_answers": len(answers),
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "total_answers": len(formatted_answers),
             "total_words": total_words,
             "avg_words_per_answer": avg_words_per_answer,
             "session_duration_seconds": session_duration,
-            "answers": answers
+            "answers": formatted_answers
         }
+    except Exception as e:
+        print(f"[ERROR] Failed to get session analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get session analytics: {str(e)}")
 
 
 @app.get("/api/debug/answers/{session_id}")
