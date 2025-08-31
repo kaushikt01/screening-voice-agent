@@ -238,7 +238,7 @@ async def cleanup_audio():
 async def get_introduction_audio():
     """Generate introduction audio for the call using Gemma and TTS utils"""
     intro_prompt = (
-        "You are an HR assistant calling an employee (John) on behalf of their organization to collect brief WOTC eligibility information. "
+        "You are an HR assistant calling an employee (Janmaijai sharma) on behalf of their organization(ADP) to collect brief WOTC eligibility information. "
         "Write a single, concise, natural spoken greeting from the caller (no options, no lists). "
         "Max 2 short sentences, under 12 seconds. "
         "Make it friendly, professional, and immediately set context that a few short questions will follow."
@@ -269,10 +269,17 @@ async def get_next_question_endpoint(index: int, session_id: str):
             0: "name",
             1: "ssn",
             2: "address",
-            3: "age",
-            4: "tanf",
-            5: "military",
-            6: "unemployment"
+            3: "cash_assistance",
+            4: "eligibility_limitation",
+            5: "other_assistance",
+            6: "felony",
+            7: "vocational_rehab",
+            8: "ssi",
+            9: "manager_info",
+            10: "eligibility_result",
+            11: "hire_date",
+            12: "start_date",
+            13: "confirmation"
         }
         
         topic_key = topic_mapping.get(index, "general")
