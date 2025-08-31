@@ -20,7 +20,7 @@ from database import (
     init_database, create_session, get_session, update_session_status,
     get_all_questions, get_question, save_answer, get_session_answers,
     save_analytics, get_session_analytics, get_dashboard_stats, check_database_health,
-    AnswerModel, CallAnalyticsModel
+    AnswerModel, CallAnalyticsModel, sessions_collection
 )
 import aiofiles
 
@@ -541,6 +541,80 @@ async def save_call_analytics(analytics_data: CallAnalyticsSubmission):
     except Exception as e:
         print(f"[ERROR] Failed to save analytics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save analytics: {str(e)}")
+
+
+@app.get("/api/sessions/search")
+async def search_sessions(
+    query: str = "",
+    limit: int = 20,
+    offset: int = 0
+):
+    """Search sessions by session ID or client information"""
+    try:
+        # Build search query
+        search_filter = {}
+        if query.strip():
+            # Search by session ID (partial match)
+            search_filter["id"] = {"$regex": query, "$options": "i"}
+        
+        # Get sessions with answer counts
+        sessions_pipeline = [
+            {"$match": search_filter},
+            {"$sort": {"created_at": -1}},
+            {"$skip": offset},
+            {"$limit": limit},
+            {
+                "$lookup": {
+                    "from": "answers",
+                    "localField": "id",
+                    "foreignField": "session_id",
+                    "as": "answers"
+                }
+            },
+            {"$addFields": {"answer_count": {"$size": "$answers"}}},
+            {
+                "$project": {
+                    "_id": 0,
+                    "session_id": "$id",
+                    "created_at": 1,
+                    "answer_count": 1,
+                    "status": 1,
+                    "client_id": 1
+                }
+            }
+        ]
+        
+        sessions_docs = await sessions_collection.aggregate(sessions_pipeline).to_list(length=None)
+        
+        # Format sessions
+        sessions = []
+        for doc in sessions_docs:
+            # Get first answer to extract client name if available
+            first_answer = None
+            if doc.get("answer_count", 0) > 0:
+                answers = await get_session_answers(doc["session_id"])
+                if answers:
+                    first_answer = answers[0].answer_text
+            
+            sessions.append({
+                "session_id": doc.get("session_id"),
+                "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+                "answer_count": int(doc.get("answer_count", 0)),
+                "status": doc.get("status", "unknown"),
+                "client_id": doc.get("client_id"),
+                "client_name": first_answer if first_answer else "Unknown Client"
+            })
+        
+        return {
+            "sessions": sessions,
+            "total": len(sessions),
+            "query": query,
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        print(f"[ERROR] Failed to search sessions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to search sessions: {str(e)}")
 
 
 @app.get("/api/session/{session_id}/analytics")

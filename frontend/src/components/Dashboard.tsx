@@ -1,23 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Phone, Users, CheckCircle, BarChart3, TrendingUp, ChevronDown, Calendar } from 'lucide-react';
-import { apiService, DashboardData } from '../services/api';
+import { Search, Phone, Users, CheckCircle, BarChart3, TrendingUp, ChevronDown, Calendar, Clock, MessageSquare } from 'lucide-react';
+import { apiService, DashboardData, SessionSearchResult, SessionDetails } from '../services/api';
 // Alternative icons to avoid ad blocker issues:
 // Instead of Fingerprint, use: Shield, Lock, Key, UserCheck, ShieldCheck
 
-interface ClientData {
-  id: string;
-  name: string;
-  callDate: string;
-  responses: Record<string, string>;
+interface SessionData {
+  session_id: string;
+  created_at: string | null;
+  answer_count: number;
+  status: string;
+  client_id: string | null;
+  client_name: string;
 }
 
 function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedClient, setSelectedClient] = useState<ClientData | null>(null);
+  const [selectedSession, setSelectedSession] = useState<SessionDetails | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [sessionSearchResults, setSessionSearchResults] = useState<SessionSearchResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load dashboard data
@@ -65,51 +69,33 @@ function Dashboard() {
     monthly: 'This Month'
   };
 
-  // Mock client data for now - in a real app this would come from the API
-  const mockClientData: ClientData[] = [
-    {
-      id: 'CL001',
-      name: 'TechCorp Solutions',
-      callDate: '2025-01-15',
-      responses: {
-        'What is your company size?': '50-100 employees',
-        'What industry are you in?': 'Technology',
-        'What is your annual revenue?': '$5M-$10M',
-        'Do you currently use CRM software?': 'Yes, Salesforce',
-        'What are your main pain points?': 'Integration issues',
-        'What is your budget range?': '$10,000-$25,000',
-        'When are you looking to implement?': 'Within 3 months',
-        'Who makes the purchasing decisions?': 'CTO and VP Sales',
-        'Have you evaluated other solutions?': 'Yes, HubSpot and Pipedrive',
-        'What features are most important?': 'Automation and analytics'
+  // Search sessions when query changes
+  useEffect(() => {
+    const searchSessions = async () => {
+      try {
+        setIsSearching(true);
+        const results = await apiService.searchSessions(searchQuery, 20, 0);
+        setSessionSearchResults(results);
+      } catch (err) {
+        console.error('Failed to search sessions:', err);
+        setError('Failed to search sessions');
+      } finally {
+        setIsSearching(false);
       }
-    },
-    {
-      id: 'CL002',
-      name: 'Healthcare Plus',
-      callDate: '2025-01-13',
-      responses: {
-        'What is your company size?': '100+ employees',
-        'What industry are you in?': 'Healthcare',
-        'What is your annual revenue?': '$10M+',
-        'Do you currently use CRM software?': 'Yes, custom solution',
-        'What are your main pain points?': 'System integration and compliance',
-        'What is your budget range?': '$25,000+',
-        'When are you looking to implement?': 'Within 1 month',
-        'Who makes the purchasing decisions?': 'CTO and Compliance Officer',
-        'Have you evaluated other solutions?': 'Yes, several enterprise solutions',
-        'What features are most important?': 'HIPAA compliance and security'
-      }
+    };
+
+    const debounceTimer = setTimeout(searchSessions, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery]);
+
+  const handleSessionSelect = async (sessionId: string) => {
+    try {
+      const sessionDetails = await apiService.getSessionDetails(sessionId);
+      setSelectedSession(sessionDetails);
+    } catch (err) {
+      console.error('Failed to get session details:', err);
+      setError('Failed to load session details');
     }
-  ];
-
-  const filteredClients = mockClientData.filter(client => 
-    client.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    client.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleClientSelect = (client: ClientData) => {
-    setSelectedClient(client);
   };
 
   const handlePeriodChange = (period: string) => {
@@ -308,18 +294,18 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Client Search */}
+          {/* Session Search */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Client Search</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Session Search</h3>
               </div>
               <div className="p-6">
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
-                    placeholder="Search clients..."
+                    placeholder="Search by session ID or leave empty for all sessions..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -327,35 +313,102 @@ function Dashboard() {
                 </div>
                 
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {filteredClients.map((client) => (
-                    <button
-                      key={client.id}
-                      onClick={() => handleClientSelect(client)}
-                      className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <p className="font-medium text-gray-900">{client.name}</p>
-                      <p className="text-sm text-gray-500">{client.callDate}</p>
-                    </button>
-                  ))}
+                  {isSearching ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                      <p className="text-sm text-gray-500 mt-2">Searching...</p>
+                    </div>
+                  ) : sessionSearchResults?.sessions.length ? (
+                    sessionSearchResults.sessions.map((session) => (
+                      <button
+                        key={session.session_id}
+                        onClick={() => handleSessionSelect(session.session_id)}
+                        className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition-colors border border-gray-100"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="font-medium text-gray-900 text-sm">
+                            {session.session_id.slice(0, 8)}...
+                          </p>
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            session.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {session.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-1">{session.client_name}</p>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{session.answer_count} answers</span>
+                          <span>{session.created_at ? new Date(session.created_at).toLocaleDateString() : 'Unknown date'}</span>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-gray-500">
+                        {searchQuery ? 'No sessions found' : 'Enter a session ID to search'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Selected Client Details */}
-        {selectedClient && (
+        {/* Selected Session Details */}
+        {selectedSession && (
           <div className="mt-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Client Details: {selectedClient.name}</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Session Details: {selectedSession.session_id.slice(0, 8)}...
+                  </h3>
+                  <div className="flex items-center space-x-4 text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <Clock className="w-4 h-4 mr-1" />
+                      <span>{selectedSession.created_at ? new Date(selectedSession.created_at).toLocaleString() : 'Unknown date'}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <MessageSquare className="w-4 h-4 mr-1" />
+                      <span>{selectedSession.total_answers} answers</span>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {Object.entries(selectedClient.responses).map(([question, answer]) => (
-                    <div key={question} className="p-4 bg-gray-50 rounded-lg">
-                      <p className="font-medium text-gray-900 mb-2">{question}</p>
-                      <p className="text-gray-600">{answer}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <p className="text-sm font-medium text-blue-600">Total Words</p>
+                    <p className="text-2xl font-bold text-blue-900">{selectedSession.total_words}</p>
+                  </div>
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <p className="text-sm font-medium text-green-600">Avg Words/Answer</p>
+                    <p className="text-2xl font-bold text-green-900">{selectedSession.avg_words_per_answer}</p>
+                  </div>
+                  <div className="p-4 bg-purple-50 rounded-lg">
+                    <p className="text-sm font-medium text-purple-600">Session Duration</p>
+                    <p className="text-2xl font-bold text-purple-900">
+                      {selectedSession.session_duration_seconds 
+                        ? `${Math.round(selectedSession.session_duration_seconds / 60)}m ${Math.round(selectedSession.session_duration_seconds % 60)}s`
+                        : 'Unknown'
+                      }
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900">Question & Answer Details</h4>
+                  {selectedSession.answers.map((answer) => (
+                    <div key={answer.id} className="p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-medium text-gray-900">Question {answer.question_id}</p>
+                        <span className="text-sm text-gray-500">{answer.word_count} words</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">{answer.question_text}</p>
+                      <p className="text-gray-900">{answer.answer_text}</p>
                     </div>
                   ))}
                 </div>
