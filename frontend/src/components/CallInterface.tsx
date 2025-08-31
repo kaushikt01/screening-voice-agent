@@ -649,10 +649,29 @@ function CallInterface() {
     console.log(`[DEBUG] processVoiceResponse called with sessionId: ${sessionId}, currentQuestion: ${currentQuestionValue}, totalQuestions: ${totalQuestions}`);
     console.log(`[DEBUG] State vs Ref comparison - state: ${currentQuestion}, ref: ${currentQuestionValue}`);
     
-          if (!sessionId) {
-        console.log('[DEBUG] No session ID, cannot process response');
-        return;
-      }
+    // Get sessionId from multiple sources to handle race conditions
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      currentSessionId = localStorage.getItem('callSessionId');
+      console.log(`[DEBUG] Retrieved sessionId from localStorage: ${currentSessionId}`);
+    }
+    if (!currentSessionId) {
+      currentSessionId = sessionIdRef.current;
+      console.log(`[DEBUG] Retrieved sessionId from ref: ${currentSessionId}`);
+    }
+    
+    if (!currentSessionId) {
+      console.log('[DEBUG] No session ID available from any source, cannot process response');
+      setError('Session ID is missing. Please refresh the page and try again.');
+      return;
+    }
+    
+    // Ensure we have valid question and total questions data
+    if (currentQuestionValue < 0 || totalQuestions === 0) {
+      console.log(`[DEBUG] Invalid question state: currentQuestion=${currentQuestionValue}, totalQuestions=${totalQuestions}`);
+      setError('Question state is invalid. Please refresh the page and try again.');
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -685,12 +704,11 @@ function CallInterface() {
         return;
       }
       
-      // Use current sessionId (might have been refreshed)
-      const currentSessionId = sessionId || localStorage.getItem('callSessionId');
-      if (!currentSessionId) {
-        console.error('[ERROR] No valid session ID available');
-        setError('Session ID is missing. Please refresh the page and try again.');
-        return;
+      // Update the sessionId state if it was retrieved from localStorage or ref
+      if (currentSessionId !== sessionId) {
+        console.log(`[DEBUG] Updating sessionId state from ${sessionId} to ${currentSessionId}`);
+        setSessionId(currentSessionId);
+        sessionIdRef.current = currentSessionId;
       }
       
       const response = await apiService.submitAnswer(currentSessionId, questionId, audioFile);
@@ -1023,8 +1041,16 @@ function CallInterface() {
       console.log('[DEBUG] Starting session...');
       const session = await apiService.startSession();
       console.log('[DEBUG] Session started:', session);
+      
+      // Update both state and refs immediately to prevent race conditions
       setSessionId(session.session_id);
+      sessionIdRef.current = session.session_id;
       setTotalQuestions(session.total_questions);
+      totalQuestionsRef.current = session.total_questions;
+      
+      // Save to localStorage immediately
+      localStorage.setItem('callSessionId', session.session_id);
+      localStorage.setItem('callTotalQuestions', session.total_questions.toString());
       
       // Load all questions
       console.log('[DEBUG] Loading questions...');
@@ -1037,6 +1063,10 @@ function CallInterface() {
       const loadedQuestions = await Promise.all(questionPromises);
       console.log('[DEBUG] Questions loaded:', loadedQuestions);
       setQuestions(loadedQuestions);
+      questionsRef.current = loadedQuestions;
+      
+      // Save questions to localStorage
+      localStorage.setItem('callQuestions', JSON.stringify(loadedQuestions));
       
       // Simulate call connection
       setTimeout(async () => {
@@ -1046,6 +1076,9 @@ function CallInterface() {
         console.log('[DEBUG] About to start introduction, questions count:', loadedQuestions.length);
         console.log('[DEBUG] Session ID at this point:', session.session_id);
         console.log('[DEBUG] Total questions at this point:', session.total_questions);
+        
+        // Ensure all state is properly synchronized
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // Start with introduction only after questions are loaded
         await playIntroduction(loadedQuestions);

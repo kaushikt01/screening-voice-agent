@@ -25,6 +25,38 @@ export interface DashboardData {
   avg_answer_length: number;
 }
 
+export interface SessionSearchResult {
+  sessions: Array<{
+    session_id: string;
+    created_at: string | null;
+    answer_count: number;
+    status: string;
+    client_id: string | null;
+    client_name: string;
+  }>;
+  total: number;
+  query: string;
+  limit: number;
+  offset: number;
+}
+
+export interface SessionDetails {
+  session_id: string;
+  created_at: string | null;
+  total_answers: number;
+  total_words: number;
+  avg_words_per_answer: number;
+  session_duration_seconds: number | null;
+  answers: Array<{
+    id: string;
+    question_id: number;
+    question_text: string;
+    answer_text: string;
+    word_count: number;
+    created_at: string | null;
+  }>;
+}
+
 
 
 export interface CallAnalytics {
@@ -120,6 +152,19 @@ class ApiService {
 
   async getDashboardData(): Promise<DashboardData> {
     return this.request('/dashboard');
+  }
+
+  async searchSessions(query: string = "", limit: number = 20, offset: number = 0): Promise<SessionSearchResult> {
+    const params = new URLSearchParams({
+      query,
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+    return this.request(`/sessions/search?${params}`);
+  }
+
+  async getSessionDetails(sessionId: string): Promise<SessionDetails> {
+    return this.request(`/session/${sessionId}/analytics`);
   }
 
 
