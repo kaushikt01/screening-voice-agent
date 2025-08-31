@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Phone, Users, CheckCircle, BarChart3, TrendingUp, ChevronDown, Calendar, Shield, Lock } from 'lucide-react';
+import { Search, Phone, Users, CheckCircle, BarChart3, TrendingUp, ChevronDown, Calendar } from 'lucide-react';
 import { apiService, DashboardData } from '../services/api';
 // Alternative icons to avoid ad blocker issues:
 // Instead of Fingerprint, use: Shield, Lock, Key, UserCheck, ShieldCheck

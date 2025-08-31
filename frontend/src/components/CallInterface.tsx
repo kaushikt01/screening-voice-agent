@@ -28,7 +28,20 @@ function CallInterface() {
   const [isSpeakerOn] = useState(true);
   const [callDuration, setCallDuration] = useState(0);
   const [responses, setResponses] = useState<Record<number, string>>({});
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    // Initialize from localStorage immediately to prevent null values
+    const saved = localStorage.getItem('callSessionId');
+    console.log('[DEBUG] Initializing sessionId from localStorage:', saved);
+    return saved || null;
+  });
+  
+  // Add a ref to track the current sessionId to avoid stale closures
+  const sessionIdRef = useRef<string | null>(sessionId);
+  
+  // Update ref whenever sessionId changes
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   const [questions, setQuestions] = useState<QuestionResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +53,19 @@ function CallInterface() {
   const [autoAdvanceTimer, setAutoAdvanceTimer] = useState<number | null>(null);
   const [totalQuestions, setTotalQuestions] = useState<number>(0);
   const [isSilenceDetected, setIsSilenceDetected] = useState(false);
+  
+  // Add refs to track current state values to avoid stale closures
+  const totalQuestionsRef = useRef<number>(totalQuestions);
+  const questionsRef = useRef<QuestionResponse[]>(questions);
+  
+  // Update refs whenever state changes
+  useEffect(() => {
+    totalQuestionsRef.current = totalQuestions;
+  }, [totalQuestions]);
+  
+  useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
 
   // Refs for voice recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -87,6 +113,7 @@ function CallInterface() {
     // Persist critical state to localStorage
     if (sessionId) {
       localStorage.setItem('callSessionId', sessionId);
+      console.log(`[DEBUG] Saved sessionId to localStorage: ${sessionId}`);
     }
     if (totalQuestions > 0) {
       localStorage.setItem('callTotalQuestions', totalQuestions.toString());
@@ -100,13 +127,109 @@ function CallInterface() {
 
   // State restoration flag to prevent race conditions
   const [isStateRestoring, setIsStateRestoring] = useState(false);
+  
+  // Function to validate and refresh session if needed
+  const validateSession = async (): Promise<boolean> => {
+    if (!sessionId) {
+      console.log('[DEBUG] No session ID found, starting new session');
+      try {
+        const session = await apiService.startSession();
+        setSessionId(session.session_id);
+        setTotalQuestions(session.total_questions);
+        localStorage.setItem('callSessionId', session.session_id);
+        localStorage.setItem('callTotalQuestions', session.total_questions.toString());
+        return true;
+      } catch (err) {
+        console.error('[ERROR] Failed to start new session:', err);
+        setError('Failed to start session. Please refresh the page.');
+        return false;
+      }
+    }
+    return true;
+  };
+  
+  // Function to ensure session is properly initialized
+  const ensureSessionInitialized = async (): Promise<boolean> => {
+    console.log('[DEBUG] Ensuring session is initialized...');
+    
+    // Check if we have all required state
+    const currentSessionId = sessionIdRef.current;
+    const currentTotalQuestions = totalQuestionsRef.current;
+    const currentQuestions = questionsRef.current;
+    
+    if (currentSessionId && currentTotalQuestions > 0 && currentQuestions.length > 0) {
+      console.log('[DEBUG] Session already initialized');
+      return true;
+    }
+    
+    // Try to restore from localStorage first
+    const savedSessionId = localStorage.getItem('callSessionId');
+    const savedTotalQuestions = localStorage.getItem('callTotalQuestions');
+    const savedQuestions = localStorage.getItem('callQuestions');
+    
+    if (savedSessionId && savedTotalQuestions && savedQuestions) {
+      console.log('[DEBUG] Restoring session from localStorage...');
+      try {
+        const parsedQuestions = JSON.parse(savedQuestions);
+        const parsedTotalQuestions = parseInt(savedTotalQuestions);
+        
+        setSessionId(savedSessionId);
+        setTotalQuestions(parsedTotalQuestions);
+        setQuestions(parsedQuestions);
+        
+        // Wait a bit for state to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        console.log('[DEBUG] Session restored from localStorage');
+        return true;
+      } catch (err) {
+        console.error('[ERROR] Failed to restore session from localStorage:', err);
+      }
+    }
+    
+    // If restoration failed, start a new session
+    console.log('[DEBUG] Starting new session...');
+    try {
+      const session = await apiService.startSession();
+      setSessionId(session.session_id);
+      setTotalQuestions(session.total_questions);
+      
+      // Load questions
+      const questionsData = await apiService.getQuestions();
+      const questionPromises = questionsData.questions.map((_, index) => 
+        apiService.getNextQuestion(index, session.session_id)
+      );
+      const loadedQuestions = await Promise.all(questionPromises);
+      setQuestions(loadedQuestions);
+      
+      // Save to localStorage
+      localStorage.setItem('callSessionId', session.session_id);
+      localStorage.setItem('callTotalQuestions', session.total_questions.toString());
+      localStorage.setItem('callQuestions', JSON.stringify(loadedQuestions));
+      
+      console.log('[DEBUG] New session started successfully');
+      return true;
+    } catch (err) {
+      console.error('[ERROR] Failed to start new session:', err);
+      setError('Failed to initialize session. Please refresh the page.');
+      return false;
+    }
+  };
 
   // Restore state from localStorage on component mount
   useEffect(() => {
+    console.log('[DEBUG] Component mount - restoring state from localStorage');
     const savedSessionId = localStorage.getItem('callSessionId');
     const savedTotalQuestions = localStorage.getItem('callTotalQuestions');
     const savedQuestions = localStorage.getItem('callQuestions');
     const savedCurrentQuestion = localStorage.getItem('callCurrentQuestion');
+    
+    console.log('[DEBUG] Saved state found:', {
+      sessionId: savedSessionId ? 'exists' : 'missing',
+      totalQuestions: savedTotalQuestions,
+      questions: savedQuestions ? 'exists' : 'missing',
+      currentQuestion: savedCurrentQuestion
+    });
     
     if (savedSessionId && !sessionId) {
       console.log('[DEBUG] Restoring session ID from localStorage:', savedSessionId);
@@ -128,11 +251,31 @@ function CallInterface() {
       }
     }
     
+    // Validate session ID exists in localStorage
+    if (!savedSessionId && sessionId) {
+      console.log('[DEBUG] Session ID exists in state but not in localStorage, saving it');
+      localStorage.setItem('callSessionId', sessionId);
+    }
+    
     if (savedCurrentQuestion && currentQuestion === 0) {
       console.log('[DEBUG] Restoring current question from localStorage:', savedCurrentQuestion);
       const questionIndex = parseInt(savedCurrentQuestion);
       setCurrentQuestion(questionIndex);
       currentQuestionRef.current = questionIndex;
+    }
+    
+    // Validate session on mount
+    if (savedSessionId) {
+      console.log('[DEBUG] Validating existing session on mount');
+      validateSession().then(isValid => {
+        if (!isValid) {
+          console.log('[DEBUG] Session validation failed on mount, clearing localStorage');
+          localStorage.removeItem('callSessionId');
+          localStorage.removeItem('callTotalQuestions');
+          localStorage.removeItem('callQuestions');
+          localStorage.removeItem('callCurrentQuestion');
+        }
+      });
     }
   }, []); // Only run on mount
 
@@ -279,7 +422,7 @@ function CallInterface() {
 
   // Start voice recording
   const startRecording = async () => {
-    console.log(`[DEBUG] startRecording called with sessionId: ${sessionId}, totalQuestions: ${totalQuestions}, questions.length: ${questions.length}`);
+    console.log('[DEBUG] startRecording called');
     
     // Prevent multiple simultaneous recording attempts
     if (isRecording) {
@@ -293,90 +436,26 @@ function CallInterface() {
       return;
     }
     
-    // Check if we have the necessary state
-    if (!sessionId || totalQuestions === 0 || questions.length === 0) {
-      console.error(`[ERROR] Cannot start recording - missing state: sessionId=${sessionId}, totalQuestions=${totalQuestions}, questions.length=${questions.length}`);
-      
-      // Try to restore state from localStorage first
-      console.log('[DEBUG] Attempting to restore state from localStorage...');
-      setIsStateRestoring(true);
-      
-      const savedSessionId = localStorage.getItem('callSessionId');
-      const savedTotalQuestions = localStorage.getItem('callTotalQuestions');
-      const savedQuestions = localStorage.getItem('callQuestions');
-      
-      if (savedSessionId && savedTotalQuestions && savedQuestions) {
-        console.log('[DEBUG] Found saved state in localStorage, restoring...');
-        
-        // Update state synchronously to avoid race conditions
-        const parsedQuestions = JSON.parse(savedQuestions);
-        const parsedTotalQuestions = parseInt(savedTotalQuestions);
-        
-        // Use a callback approach to ensure state is updated before proceeding
-        setSessionId(savedSessionId);
-        setTotalQuestions(parsedTotalQuestions);
-        setQuestions(parsedQuestions);
-        
-        console.log('[DEBUG] State restored from localStorage:', { 
-          sessionId: savedSessionId, 
-          totalQuestions: parsedTotalQuestions, 
-          questionsLength: parsedQuestions.length 
-        });
-        
-        // Use a longer delay and check if state is actually updated
-        setTimeout(() => {
-          // Check if state was actually updated
-          const currentSessionId = localStorage.getItem('callSessionId');
-          const currentTotalQuestions = localStorage.getItem('callTotalQuestions');
-          const currentQuestions = localStorage.getItem('callQuestions');
-          
-          if (currentSessionId && currentTotalQuestions && currentQuestions) {
-            console.log('[DEBUG] State appears to be restored, retrying startRecording...');
-            setIsStateRestoring(false);
-            // Use the restored values directly instead of relying on React state
-            startRecordingWithState(currentSessionId, parseInt(currentTotalQuestions), JSON.parse(currentQuestions));
-          } else {
-            console.error('[ERROR] State restoration failed, cannot proceed');
-            setIsStateRestoring(false);
-          }
-        }, 200);
-        return;
-      }
-      
-      // If localStorage restoration failed, try to recover by re-initializing
-      if (sessionId) {
-        console.log('[DEBUG] Attempting to recover by re-loading questions...');
-        try {
-          const questionsData = await apiService.getQuestions();
-          const questionPromises = questionsData.questions.map((_, index) => 
-            apiService.getNextQuestion(index, sessionId)
-          );
-          const loadedQuestions = await Promise.all(questionPromises);
-          setQuestions(loadedQuestions);
-          setTotalQuestions(questionsData.questions.length);
-          console.log('[DEBUG] Questions recovered:', loadedQuestions);
-          
-          // Use the loaded values directly
-          setTimeout(() => {
-            console.log('[DEBUG] Retrying startRecording after question recovery...');
-            setIsStateRestoring(false);
-            startRecordingWithState(sessionId, questionsData.questions.length, loadedQuestions);
-          }, 200);
-          return;
-        } catch (err) {
-          console.error('[ERROR] Failed to recover questions:', err);
-          setIsStateRestoring(false);
-          return;
-        }
-      } else {
-        console.error('[ERROR] No session ID available, cannot start recording');
-        setIsStateRestoring(false);
-        return;
-      }
+    // Ensure session is properly initialized before recording
+    const sessionInitialized = await ensureSessionInitialized();
+    if (!sessionInitialized) {
+      console.error('[ERROR] Failed to initialize session, cannot start recording');
+      return;
     }
     
-    // If we have all the state, proceed with recording
-    startRecordingWithState(sessionId, totalQuestions, questions);
+    // Get current state from refs
+    const currentSessionId = sessionIdRef.current;
+    const currentTotalQuestions = totalQuestionsRef.current;
+    const currentQuestions = questionsRef.current;
+    
+    if (!currentSessionId || currentTotalQuestions === 0 || currentQuestions.length === 0) {
+      console.error(`[ERROR] Session initialization failed - missing state: sessionId=${currentSessionId}, totalQuestions=${currentTotalQuestions}, questions.length=${currentQuestions.length}`);
+      return;
+    }
+    
+    // Proceed with recording
+    console.log('[DEBUG] Starting recording with initialized session');
+    startRecordingWithState(currentSessionId, currentTotalQuestions, currentQuestions);
   };
 
   // Helper function to start recording with explicit state values
@@ -599,7 +678,22 @@ function CallInterface() {
       // Mark this question as answered immediately to prevent race conditions
       answeredQuestionsRef.current.add(currentQuestionValue);
       
-      const response = await apiService.submitAnswer(sessionId, questionId, audioFile);
+      // Validate session before submitting
+      const sessionValid = await validateSession();
+      if (!sessionValid) {
+        console.error('[ERROR] Session validation failed, cannot submit answer');
+        return;
+      }
+      
+      // Use current sessionId (might have been refreshed)
+      const currentSessionId = sessionId || localStorage.getItem('callSessionId');
+      if (!currentSessionId) {
+        console.error('[ERROR] No valid session ID available');
+        setError('Session ID is missing. Please refresh the page and try again.');
+        return;
+      }
+      
+      const response = await apiService.submitAnswer(currentSessionId, questionId, audioFile);
       
       // Calculate analytics
       const responseTime = questionStartTime ? new Date().getTime() - questionStartTime.getTime() : 0;

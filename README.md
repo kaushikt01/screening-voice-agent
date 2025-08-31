@@ -23,12 +23,22 @@ Hackathon 2025/
 cd v1
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# Setup TTS (required for voice generation)
+pip install piper-tts torch torchaudio
+mkdir -p piper_models
+# Download voice model:
+wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx -O piper_models/en_US-amy-medium.onnx
+wget https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json -O piper_models/en_US-amy-medium.onnx.json
+
 # Initialize DB (first time)
 python setup_mongodb.py init
 # Run API
 python run.py
 # API: http://localhost:8000
 ```
+
+**TTS Troubleshooting:** If you get `ModuleNotFoundError: No module named 'piper'`, see `v1/TTS_SETUP.md` for detailed instructions.
 
 Env (optional):
 ```
@@ -64,3 +74,4 @@ npm run dev
 - MongoDB: `python setup_mongodb.py test` and `python setup_mongodb.py all`
 - 500 on `/api/dashboard`: ensure MongoDB is running; DB returns JSON-safe data now.
 - Mic/recording: check browser permissions.
+- **TTS issues**: See `v1/TTS_SETUP.md` for detailed troubleshooting.

@@ -2,7 +2,7 @@ import requests
 import os
 from tts_piper import generate_tts_piper
 
-GEMMA_API_URL = os.getenv("GEMMA_API_URL", "http://192.168.1.6:1234")
+GEMMA_API_URL = os.getenv("GEMMA_API_URL", "http://localhost:1234")
 
 def get_gemma_response(prompt: str) -> str:
     """Send prompt to Gemma 3 model and return the generated response text."""

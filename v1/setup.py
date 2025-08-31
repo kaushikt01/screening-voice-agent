@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Setup script for QnA Voice App
+Setup script for QnA Voice Agent
 """
 
-import os
-import sys
 import subprocess
+import sys
+import os
 from pathlib import Path
 
 def run_command(command, description):
-    """Run a command and handle errors"""
+    """Run a command and handle errors."""
     print(f"🔄 {description}...")
     try:
         result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
@@ -21,80 +21,97 @@ def run_command(command, description):
         return False
 
 def check_python_version():
-    """Check if Python version is compatible"""
-    if sys.version_info < (3, 8):
+    """Check if Python version is compatible."""
+    version = sys.version_info
+    if version.major < 3 or (version.major == 3 and version.minor < 8):
         print("❌ Python 3.8 or higher is required")
-        print(f"Current version: {sys.version}")
         return False
-    print(f"✅ Python version: {sys.version}")
+    print(f"✅ Python {version.major}.{version.minor}.{version.micro} detected")
     return True
 
+def setup_virtual_environment():
+    """Create and activate virtual environment."""
+    venv_path = Path(".venv")
+    if venv_path.exists():
+        print("✅ Virtual environment already exists")
+        return True
+    
+    return run_command("python3 -m venv .venv", "Creating virtual environment")
+
 def install_dependencies():
-    """Install Python dependencies"""
-    return run_command("pip install -r requirements.txt", "Installing Python dependencies")
-
-def create_env_file():
-    """Create .env file if it doesn't exist"""
-    env_file = Path(".env")
-    if env_file.exists():
-        print("✅ .env file already exists")
-        return True
+    """Install Python dependencies."""
+    # Determine the correct pip command based on OS
+    if os.name == 'nt':  # Windows
+        pip_cmd = ".venv\\Scripts\\pip"
+    else:  # Unix/Linux/macOS
+        pip_cmd = ".venv/bin/pip"
     
-    env_example = Path("env.example")
-    if not env_example.exists():
-        print("❌ env.example file not found")
-        return False
+    # Upgrade pip first
+    run_command(f"{pip_cmd} install --upgrade pip", "Upgrading pip")
     
-    # Copy env.example to .env
-    try:
-        with open(env_example, 'r') as src:
-            content = src.read()
-        with open(env_file, 'w') as dst:
-            dst.write(content)
-        print("✅ Created .env file from env.example")
-        print("⚠️  Please edit .env file with your database URL")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to create .env file: {e}")
-        return False
+    # Install requirements
+    return run_command(f"{pip_cmd} install -r requirements.txt", "Installing Python dependencies")
 
-def create_directories():
-    """Create necessary directories"""
-    directories = ["static/audio"]
-    for directory in directories:
-        Path(directory).mkdir(parents=True, exist_ok=True)
-    print("✅ Created necessary directories")
+def setup_spacy():
+    """Download spaCy model."""
+    if os.name == 'nt':  # Windows
+        python_cmd = ".venv\\Scripts\\python"
+    else:  # Unix/Linux/macOS
+        python_cmd = ".venv/bin/python"
+    
+    return run_command(f"{python_cmd} -m spacy download en_core_web_sm", "Downloading spaCy model")
+
+def setup_tts():
+    """Setup TTS components."""
+    print("🔧 Setting up TTS components...")
+    
+    # Create audio directory
+    audio_dir = Path("static/audio")
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    print("✅ Created audio directory")
+    
+    # Check if piper models exist
+    piper_dir = Path("piper_models")
+    if piper_dir.exists() and list(piper_dir.glob("*.onnx")):
+        print("✅ Piper models found")
+    else:
+        print("⚠️  Piper models not found. You may need to download them manually.")
+        print("   See TTS_SETUP.md for instructions")
+    
+    return True
 
 def main():
-    """Main setup function"""
-    print("🚀 QnA Voice App Setup")
-    print("=" * 40)
+    """Main setup function."""
+    print("🚀 Setting up QnA Voice Agent...")
+    print("=" * 50)
     
     # Check Python version
     if not check_python_version():
         sys.exit(1)
     
+    # Setup virtual environment
+    if not setup_virtual_environment():
+        sys.exit(1)
+    
     # Install dependencies
     if not install_dependencies():
-        print("❌ Setup failed at dependency installation")
         sys.exit(1)
     
-    # Create directories
-    create_directories()
-    
-    # Create .env file
-    if not create_env_file():
-        print("❌ Setup failed at environment file creation")
+    # Setup spaCy
+    if not setup_spacy():
         sys.exit(1)
     
-    print("\n" + "=" * 40)
+    # Setup TTS
+    if not setup_tts():
+        sys.exit(1)
+    
+    print("\n" + "=" * 50)
     print("✅ Setup completed successfully!")
     print("\n📋 Next steps:")
-    print("1. Edit .env file with your database URL")
-    print("2. Set up a PostgreSQL database (Supabase/Neon)")
+    print("1. Copy .env.example to .env and configure your settings")
+    print("2. Install and start MongoDB")
     print("3. Run: python run.py")
-    print("4. Open: http://localhost:8000/static/index.html")
-    print("\n📚 For detailed instructions, see README.md")
+    print("\n📚 For detailed setup instructions, see README.md")
 
 if __name__ == "__main__":
     main()

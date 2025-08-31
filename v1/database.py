@@ -107,35 +107,91 @@ async def init_database():
             },
             {
                 "id": 4,
-                "question_text": "Are you under the age of 40?",
+                "question_text": "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? Please answer YES or NO.",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 4,
-                "metadata": {"type": "age_verification"}
+                "metadata": {"type": "cash_assistance_verification"}
             },
             {
                 "id": 5,
-                "question_text": "Have you or anyone in your household received TANF welfare payments? You can answer 'yes' or 'not applicable'.",
+                "question_text": "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? Please answer YES or NO.",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 5,
-                "metadata": {"type": "welfare_verification"}
+                "metadata": {"type": "eligibility_limitation_verification"}
             },
             {
                 "id": 6,
-                "question_text": "Have you served in the U.S. military?",
+                "question_text": "Have you received any child care, housing or transportation assistance anytime since 18 months ago? Please answer YES or NO.",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 6,
-                "metadata": {"type": "military_service"}
+                "metadata": {"type": "assistance_verification"}
             },
             {
                 "id": 7,
-                "question_text": "In the past year, were you unemployed and did you receive unemployment compensation for at least 27 weeks?",
+                "question_text": "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? Please answer YES or NO.",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 7,
-                "metadata": {"type": "unemployment_verification"}
+                "metadata": {"type": "felony_verification"}
+            },
+            {
+                "id": 8,
+                "question_text": "Have you participated in a vocational rehabilitation program? Please answer YES or NO.",
+                "category": "eligibility",
+                "is_required": True,
+                "order": 8,
+                "metadata": {"type": "vocational_rehab_verification"}
+            },
+            {
+                "id": 9,
+                "question_text": "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? Please answer YES or NO.",
+                "category": "eligibility",
+                "is_required": True,
+                "order": 9,
+                "metadata": {"type": "ssi_verification"}
+            },
+            {
+                "id": 10,
+                "question_text": "If available, please have your hiring manager provide additional information. If your manager is not available, please continue. Please say 'Ready' when prepared to continue.",
+                "category": "manager_info",
+                "is_required": False,
+                "order": 10,
+                "metadata": {"type": "manager_verification"}
+            },
+            {
+                "id": 11,
+                "question_text": "Your employer is not eligible for a tax credit.",
+                "category": "eligibility_result",
+                "is_required": False,
+                "order": 11,
+                "metadata": {"type": "eligibility_result"}
+            },
+            {
+                "id": 12,
+                "question_text": "Please provide the applicant's Hire Date in MM/DD/YYYY format.",
+                "category": "employment_info",
+                "is_required": True,
+                "order": 12,
+                "metadata": {"type": "hire_date_collection"}
+            },
+            {
+                "id": 13,
+                "question_text": "Please provide the applicant's Start Date in MM/DD/YYYY format.",
+                "category": "employment_info",
+                "is_required": True,
+                "order": 13,
+                "metadata": {"type": "start_date_collection"}
+            },
+            {
+                "id": 14,
+                "question_text": "Your confirmation number is 030F9ADCEN. Would you like to hear that number again?",
+                "category": "confirmation",
+                "is_required": False,
+                "order": 14,
+                "metadata": {"type": "confirmation_number"}
             }
         ]
         

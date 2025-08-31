@@ -1,9 +1,6 @@
 const API_BASE_URL = 'http://localhost:8000/api';
 
-export interface Question {
-  id: number;
-  question: string;
-}
+
 
 export interface QuestionResponse {
   id: number;
@@ -11,16 +8,7 @@ export interface QuestionResponse {
   audio_url: string;
 }
 
-export interface SessionResult {
-  session_id: string;
-  answers: Array<{
-    id: number;
-    question_id: number;
-    question_text: string;
-    answer_text: string;
-    created_at: string | null;
-  }>;
-}
+
 
 export interface DashboardData {
   total_sessions: number;
@@ -37,22 +25,7 @@ export interface DashboardData {
   avg_answer_length: number;
 }
 
-export interface SessionAnalytics {
-  session_id: string;
-  created_at: string | null;
-  total_answers: number;
-  total_words: number;
-  avg_words_per_answer: number;
-  session_duration_seconds: number | null;
-  answers: Array<{
-    id: number;
-    question_id: number;
-    question_text: string;
-    answer_text: string;
-    word_count: number;
-    created_at: string | null;
-  }>;
-}
+
 
 export interface CallAnalytics {
   question_id: number;
@@ -111,7 +84,7 @@ class ApiService {
     return this.request('/start-session', { method: 'POST' });
   }
 
-  async getQuestions(): Promise<{ questions: Question[] }> {
+  async getQuestions(): Promise<{ questions: Array<{ id: number; question: string }> }> {
     return this.request('/questions');
   }
 
@@ -143,17 +116,13 @@ class ApiService {
     return response.json();
   }
 
-  async getResults(sessionId: string): Promise<SessionResult> {
-    return this.request(`/results/${sessionId}`);
-  }
+
 
   async getDashboardData(): Promise<DashboardData> {
     return this.request('/dashboard');
   }
 
-  async getSessionAnalytics(sessionId: string): Promise<SessionAnalytics> {
-    return this.request(`/session/${sessionId}/analytics`);
-  }
+
 
   async saveCallAnalytics(sessionId: string, analytics: CallAnalytics[]): Promise<{ success: boolean; message: string }> {
     const submission: CallAnalyticsSubmission = {
