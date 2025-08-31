@@ -128,6 +128,9 @@ class ApiService {
     success: boolean;
     answer_text: string;
     question_id: number;
+    validation_failed?: boolean;
+    fallback_message?: string;
+    original_answer?: string;
   }> {
     const formData = new FormData();
     formData.append('session_id', sessionId);

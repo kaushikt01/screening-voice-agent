@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, Circle, Loader2 } from 'lucide-react';
 import { apiService, QuestionResponse } from '../services/api';
 
+// Mock TTS function for fallback messages (in a real app, this would call the backend TTS API)
+const generate_conversational_voice = (text: string, filename: string, style: string): string => {
+  // For now, return a placeholder - in a real implementation, this would call the backend TTS API
+  console.log(`[DEBUG] Would generate TTS for: "${text}" with filename: ${filename}, style: ${style}`);
+  return `/static/audio/${filename}`;
+};
+
 const mockClientInfo = {
   name: "Sarah Johnson",
   company: "ADP",
@@ -53,6 +60,7 @@ function CallInterface() {
   const [autoAdvanceTimer, setAutoAdvanceTimer] = useState<number | null>(null);
   const [totalQuestions, setTotalQuestions] = useState<number>(0);
   const [isSilenceDetected, setIsSilenceDetected] = useState(false);
+  const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   
   // Add refs to track current state values to avoid stale closures
   const totalQuestionsRef = useRef<number>(totalQuestions);
@@ -713,6 +721,18 @@ function CallInterface() {
       
       const response = await apiService.submitAnswer(currentSessionId, questionId, audioFile);
       
+      // Check if validation failed
+      if (response.validation_failed) {
+        console.log(`[DEBUG] Answer validation failed for question ${questionId}: "${response.fallback_message}"`);
+        console.log(`[DEBUG] Original answer: "${response.original_answer}"`);
+        
+        // Play fallback message
+        await playFallbackMessage(response.fallback_message || "I didn't understand your response. Please try again.");
+        
+        // Don't advance to next question - let user try again
+        return;
+      }
+      
       // Calculate analytics
       const responseTime = questionStartTime ? new Date().getTime() - questionStartTime.getTime() : 0;
       const answerDuration = recordingStartTime ? new Date().getTime() - recordingStartTime.getTime() : 0;
@@ -923,6 +943,99 @@ function CallInterface() {
       await audio.play();
     } catch (err) {
       console.error('Error playing audio:', err);
+      setCallStatus('connected');
+      setQuestionStartTime(new Date());
+      // Auto-start recording even if audio fails
+      startRecording();
+    }
+  };
+
+  // Play fallback message when validation fails
+  const playFallbackMessage = async (message: string) => {
+    try {
+      setCallStatus('agent-speaking');
+      setFallbackMessage(message);
+      
+      // Stop any current audio
+      if (currentAudio) {
+        try { currentAudio.pause(); } catch {}
+      }
+      
+      // Generate fallback audio using backend TTS API
+      console.log('Generating fallback audio for:', message);
+      
+      try {
+        // Call backend TTS API to generate audio
+        const response = await fetch('http://localhost:8000/api/generate-fallback-audio', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: message,
+            style: 'friendly'
+          })
+        });
+        
+        if (response.ok) {
+          const audioData = await response.json();
+          const audioUrl = audioData.audio_url;
+          
+          if (audioUrl) {
+            // Fix audio path
+            let fullAudioUrl = audioUrl.startsWith('http') 
+              ? audioUrl 
+              : `http://localhost:8000${audioUrl}`;
+            
+            console.log('Playing fallback audio from:', fullAudioUrl);
+            
+            // Preload and play the audio
+            const audio = await preloadAudio(fullAudioUrl);
+            const shouldMute = isMuted || !isSpeakerOn;
+            audio.muted = shouldMute;
+            audio.volume = shouldMute ? 0 : 1;
+            setCurrentAudio(audio);
+            
+            audio.onended = () => {
+              console.log('Fallback audio finished, returning to question');
+              setFallbackMessage(null);
+              setCallStatus('connected');
+              setQuestionStartTime(new Date());
+              // Auto-start recording after fallback message
+              startRecording();
+            };
+            
+            audio.onerror = (e) => {
+              console.error('Fallback audio error:', e);
+              setFallbackMessage(null);
+              setCallStatus('connected');
+              setQuestionStartTime(new Date());
+              // Auto-start recording even if audio fails
+              startRecording();
+            };
+            
+            await audio.play();
+            return; // Successfully played audio
+          }
+        }
+      } catch (audioError) {
+        console.error('Failed to generate fallback audio:', audioError);
+      }
+      
+      // Fallback: if TTS fails, just show the message for 3 seconds
+      console.log('Using fallback display-only mode');
+      setTimeout(() => {
+        console.log('Fallback message finished, returning to question');
+        setFallbackMessage(null);
+        setCallStatus('connected');
+        setQuestionStartTime(new Date());
+        // Auto-start recording after fallback message
+        startRecording();
+      }, 3000); // 3 second delay to show the message
+      
+    } catch (err) {
+      console.error('Error playing fallback message:', err);
+      setFallbackMessage(null);
       setCallStatus('connected');
       setQuestionStartTime(new Date());
       // Auto-start recording even if audio fails
@@ -1411,8 +1524,22 @@ function CallInterface() {
                             <span className="text-xs text-blue-200">Processing...</span>
                           </div>
                         )}
+                        {fallbackMessage && (
+                          <div className="flex items-center space-x-1">
+                            <Circle className="w-2 h-2 text-orange-400 fill-current animate-pulse" />
+                            <span className="text-xs text-orange-200">Agent speaking...</span>
+                          </div>
+                        )}
                       </div>
                       <p className="text-white font-medium mb-4">{questions[currentQuestion].question_text}</p>
+                      
+                      {/* Fallback Message Display */}
+                      {fallbackMessage && (
+                        <div className="bg-orange-500/20 border border-orange-400/30 rounded-lg p-3 mb-3">
+                          <p className="text-orange-200 text-sm font-medium">Agent Response:</p>
+                          <p className="text-orange-100">{fallbackMessage}</p>
+                        </div>
+                      )}
                       
                       {/* Response Display */}
                       {responses[currentQuestion] && (

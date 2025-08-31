@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from tts_utils import get_gemma_response
 from tts_router import generate_tts, generate_conversational_voice, generate_emotional_voice
 from conversation_engine import ConversationEngine
+from answer_validator import AnswerValidator
 from database import (
     init_database, create_session, get_session, update_session_status,
     get_all_questions, get_question, save_answer, get_session_answers,
@@ -43,8 +44,9 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 # Mount static files for audio access
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Initialize conversation engine
+# Initialize conversation engine and answer validator
 conversation_engine = ConversationEngine()
+answer_validator = AnswerValidator()
 
 def cleanup_old_audio_files():
     """Clean up old audio files to prevent directory clutter."""
@@ -238,7 +240,7 @@ async def cleanup_audio():
 async def get_introduction_audio():
     """Generate introduction audio for the call using Gemma and TTS utils"""
     intro_prompt = (
-        "You are an HR assistant calling an employee (Janmaijai sharma) on behalf of their organization(ADP) to collect brief WOTC eligibility information. "
+        "You are an HR assistant calling an employee (Lalit) on behalf of their organization(ADP) to collect brief WOTC eligibility information. You are Sarah"
         "Write a single, concise, natural spoken greeting from the caller (no options, no lists). "
         "Max 2 short sentences, under 12 seconds. "
         "Make it friendly, professional, and immediately set context that a few short questions will follow."
@@ -387,7 +389,40 @@ async def submit_answer(
             extracted_text = "audio recorded successfully - transcription pending"
 
         print(f"[DEBUG] Final validated answer_text: '{extracted_text}'")
-        print(f"[DEBUG] Saving to database...")
+        
+        # 🔹 Validate answer using local LLM
+        print(f"[DEBUG] Starting answer validation for question {question_id}...")
+        try:
+            # Get the question text for validation
+            question = await get_question(question_id)
+            question_text = question.question_text if question else f"Question {question_id}"
+            
+            # Validate the answer
+            is_valid, fallback_message = await answer_validator.validate_answer(
+                question_id, question_text, extracted_text
+            )
+            
+            print(f"[DEBUG] Answer validation result: valid={is_valid}, fallback='{fallback_message}'")
+            
+            if not is_valid:
+                print(f"[DEBUG] Answer validation failed, returning fallback response")
+                print(f"[DEBUG] Question: {question_text}")
+                print(f"[DEBUG] Answer: {extracted_text}")
+                print(f"[DEBUG] Fallback: {fallback_message}")
+                return {
+                    "success": False,
+                    "validation_failed": True,
+                    "fallback_message": fallback_message,
+                    "question_id": question_id,
+                    "original_answer": extracted_text
+                }
+            
+        except Exception as e:
+            print(f"[ERROR] Answer validation failed: {e}")
+            # If validation fails, continue with the answer as-is
+            print(f"[DEBUG] Continuing with answer despite validation error")
+        
+        print(f"[DEBUG] Answer validation passed, saving to database...")
         try:
             # Create answer model
             answer_data = AnswerModel(
@@ -670,6 +705,58 @@ async def get_session_analytics_endpoint(session_id: str):
     except Exception as e:
         print(f"[ERROR] Failed to get session analytics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get session analytics: {str(e)}")
+
+
+@app.get("/api/test-validation")
+async def test_validation(
+    question_id: int = 1,
+    question_text: str = "What's your first and last name?",
+    answer_text: str = "Hello there"
+):
+    """Test endpoint for answer validation."""
+    try:
+        is_valid, fallback_message = await answer_validator.validate_answer(
+            question_id, question_text, answer_text
+        )
+        
+        return {
+            "question_id": question_id,
+            "question_text": question_text,
+            "answer_text": answer_text,
+            "is_valid": is_valid,
+            "fallback_message": fallback_message
+        }
+    except Exception as e:
+        print(f"[ERROR] Test validation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Validation test failed: {str(e)}")
+
+
+class FallbackAudioRequest(BaseModel):
+    text: str
+    style: str = "friendly"
+
+@app.post("/api/generate-fallback-audio")
+async def generate_fallback_audio(request: FallbackAudioRequest):
+    """Generate audio for fallback messages."""
+    try:
+        print(f"[DEBUG] Generating fallback audio for: '{request.text}' with style: {request.style}")
+        
+        # Generate unique filename
+        audio_filename = f"fallback_{uuid.uuid4().hex[:8]}.mp3"
+        
+        # Generate audio using TTS
+        audio_url = generate_conversational_voice(request.text, audio_filename, request.style)
+        
+        if not audio_url:
+            print(f"[ERROR] Failed to generate fallback audio for: {request.text}")
+            raise HTTPException(status_code=500, detail="Failed to generate audio")
+        
+        print(f"[DEBUG] Fallback audio generated: {audio_url}")
+        return {"audio_url": audio_url}
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to generate fallback audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate fallback audio: {str(e)}")
 
 
 @app.get("/api/debug/answers/{session_id}")
