@@ -107,7 +107,7 @@ async def init_database():
             },
             {
                 "id": 4,
-                "question_text": "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? Please answer YES or NO.",
+                "question_text": "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 4,
@@ -115,7 +115,7 @@ async def init_database():
             },
             {
                 "id": 5,
-                "question_text": "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? Please answer YES or NO.",
+                "question_text": "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 5,
@@ -123,7 +123,7 @@ async def init_database():
             },
             {
                 "id": 6,
-                "question_text": "Have you received any child care, housing or transportation assistance anytime since 18 months ago? Please answer YES or NO.",
+                "question_text": "Have you received any child care, housing or transportation assistance anytime since 18 months ago? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 6,
@@ -131,7 +131,7 @@ async def init_database():
             },
             {
                 "id": 7,
-                "question_text": "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? Please answer YES or NO.",
+                "question_text": "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 7,
@@ -139,7 +139,7 @@ async def init_database():
             },
             {
                 "id": 8,
-                "question_text": "Have you participated in a vocational rehabilitation program? Please answer YES or NO.",
+                "question_text": "Have you participated in a vocational rehabilitation program? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 8,
@@ -147,7 +147,7 @@ async def init_database():
             },
             {
                 "id": 9,
-                "question_text": "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? Please answer YES or NO.",
+                "question_text": "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? ",
                 "category": "eligibility",
                 "is_required": True,
                 "order": 9,
@@ -155,39 +155,23 @@ async def init_database():
             },
             {
                 "id": 10,
-                "question_text": "If available, please have your hiring manager provide additional information. If your manager is not available, please continue. Please say 'Ready' when prepared to continue.",
-                "category": "manager_info",
-                "is_required": False,
-                "order": 10,
-                "metadata": {"type": "manager_verification"}
-            },
-            {
-                "id": 11,
-                "question_text": "Your employer is not eligible for a tax credit.",
-                "category": "eligibility_result",
-                "is_required": False,
-                "order": 11,
-                "metadata": {"type": "eligibility_result"}
-            },
-            {
-                "id": 12,
-                "question_text": "Please provide the applicant's Hire Date in MM/DD/YYYY format.",
+                "question_text": "Please provide the applicant's Hire Date",
                 "category": "employment_info",
                 "is_required": True,
                 "order": 12,
                 "metadata": {"type": "hire_date_collection"}
             },
             {
-                "id": 13,
-                "question_text": "Please provide the applicant's Start Date in MM/DD/YYYY format.",
+                "id": 11,
+                "question_text": "Please provide the applicant's Start Date",
                 "category": "employment_info",
                 "is_required": True,
                 "order": 13,
                 "metadata": {"type": "start_date_collection"}
             },
             {
-                "id": 14,
-                "question_text": "Your confirmation number is 030F9ADCEN. Would you like to hear that number again?",
+                "id": 12,
+                "question_text": "Your confirmation number is 030F9ADCEN.",
                 "category": "confirmation",
                 "is_required": False,
                 "order": 14,

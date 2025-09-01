@@ -72,11 +72,11 @@ class ConversationEngine:
                 ]
             },
             "cash_assistance": {
-                "main_question": "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? Please answer YES or NO.",
+                "main_question": "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? ",
                 "variations": [
-                    "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? Please answer YES or NO.",
-                    "Within the last two years, have you or anyone in your household received A.F.D.C. or T.A.N.F. benefits? Please answer YES or NO.",
-                    "Have you or a family member received cash assistance benefits in the past two years? Please answer YES or NO."
+                    "Have you or a household family member received any form of cash assistance (A.F.D.C. and T.A.N.F. benefits) within the last two years? ",
+                    "Within the last two years, have you or anyone in your household received A.F.D.C. or T.A.N.F. benefits? ",
+                    "Have you or a family member received cash assistance benefits in the past two years? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about eligibility limitations.",
@@ -90,11 +90,11 @@ class ConversationEngine:
                 ]
             },
             "eligibility_limitation": {
-                "main_question": "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? Please answer YES or NO.",
+                "main_question": "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? ",
                 "variations": [
-                    "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? Please answer YES or NO.",
-                    "Did your family stop being eligible for cash assistance benefits in the last two years due to federal or state limitations? Please answer YES or NO.",
-                    "Within the last two years, did your family lose eligibility for A.F.D.C. or T.A.N.F. benefits due to federal or state limitations? Please answer YES or NO."
+                    "Are you a member of a family that stopped being eligible for cash assistance (A.F.D.C. or T.A.N.F. benefits) within the last two years because of federal or state limitations? ",
+                    "Did your family stop being eligible for cash assistance benefits in the last two years due to federal or state limitations? ",
+                    "Within the last two years, did your family lose eligibility for A.F.D.C. or T.A.N.F. benefits due to federal or state limitations? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about other assistance programs.",
@@ -108,11 +108,11 @@ class ConversationEngine:
                 ]
             },
             "other_assistance": {
-                "main_question": "Have you received any child care, housing or transportation assistance anytime since 18 months ago? Please answer YES or NO.",
+                "main_question": "Have you received any child care, housing or transportation assistance anytime since 18 months ago? ",
                 "variations": [
-                    "Have you received any child care, housing or transportation assistance anytime since 18 months ago? Please answer YES or NO.",
-                    "Since 18 months ago, have you received any child care, housing, or transportation assistance? Please answer YES or NO.",
-                    "Have you received assistance with child care, housing, or transportation in the last 18 months? Please answer YES or NO."
+                    "Have you received any child care, housing or transportation assistance anytime since 18 months ago? ",
+                    "Since 18 months ago, have you received any child care, housing, or transportation assistance? ",
+                    "Have you received assistance with child care, housing, or transportation in the last 18 months? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about criminal history.",
@@ -126,11 +126,11 @@ class ConversationEngine:
                 ]
             },
             "felony": {
-                "main_question": "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? Please answer YES or NO.",
+                "main_question": "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? ",
                 "variations": [
-                    "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? Please answer YES or NO.",
-                    "Have you ever been convicted of a felony or received deferred adjudication? Please answer YES or NO.",
-                    "Do you have any felony convictions or deferred adjudication? Please answer YES or NO."
+                    "Have you ever been convicted of a felony or received deferred adjudication for a felony charge? ",
+                    "Have you ever been convicted of a felony or received deferred adjudication? ",
+                    "Do you have any felony convictions or deferred adjudication? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about vocational rehabilitation.",
@@ -144,11 +144,11 @@ class ConversationEngine:
                 ]
             },
             "vocational_rehab": {
-                "main_question": "Have you participated in a vocational rehabilitation program? Please answer YES or NO.",
+                "main_question": "Have you participated in a vocational rehabilitation program? ",
                 "variations": [
-                    "Have you participated in a vocational rehabilitation program? Please answer YES or NO.",
-                    "Have you been part of a vocational rehabilitation program? Please answer YES or NO.",
-                    "Do you have experience with vocational rehabilitation programs? Please answer YES or NO."
+                    "Have you participated in a vocational rehabilitation program? ",
+                    "Have you been part of a vocational rehabilitation program? ",
+                    "Do you have experience with vocational rehabilitation programs? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about SSI benefits.",
@@ -162,11 +162,11 @@ class ConversationEngine:
                 ]
             },
             "ssi": {
-                "main_question": "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? Please answer YES or NO.",
+                "main_question": "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? ",
                 "variations": [
-                    "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? Please answer YES or NO.",
-                    "Since 3 months ago, have you received any SSI checks from the government? Please answer YES or NO.",
-                    "Have you received SSI benefits in the last 3 months? Please answer YES or NO."
+                    "Have you received a Supplemental Security Income (SSI) check from the government anytime since 3 months ago? ",
+                    "Since 3 months ago, have you received any SSI checks from the government? ",
+                    "Have you received SSI benefits in the last 3 months? "
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask about manager information.",
@@ -179,48 +179,12 @@ class ConversationEngine:
                     "Understood. I'll keep this brief."
                 ]
             },
-            "manager_info": {
-                "main_question": "If available, please have your hiring manager provide additional information. If your manager is not available, please continue. Please say 'Ready' when prepared to continue.",
-                "variations": [
-                    "If available, please have your hiring manager provide additional information. If your manager is not available, please continue. Please say 'Ready' when prepared to continue.",
-                    "Please have your hiring manager provide additional information if available. If not, please continue. Say 'Ready' when prepared.",
-                    "If your hiring manager is available, please have them provide additional information. Otherwise, continue. Say 'Ready' when prepared."
-                ],
-                "follow_ups": [
-                    "Thank you. I'll provide the eligibility result next.",
-                    "Got it. I'll provide the eligibility result next.",
-                    "Thanks. Moving on to the eligibility result."
-                ],
-                "contextual_questions": [
-                    "Appreciate that. Ready for the result?",
-                    "Thanks for clarifying. Let's continue.",
-                    "Understood. I'll provide the result now."
-                ]
-            },
-            "eligibility_result": {
-                "main_question": "Your employer is not eligible for a tax credit.",
-                "variations": [
-                    "Your employer is not eligible for a tax credit.",
-                    "Based on the information provided, your employer is not eligible for a tax credit.",
-                    "I need to inform you that your employer is not eligible for a tax credit."
-                ],
-                "follow_ups": [
-                    "Thank you. Next, I'll ask for employment dates.",
-                    "Got it. I'll ask for employment dates next.",
-                    "Thanks. Moving on to employment dates."
-                ],
-                "contextual_questions": [
-                    "Appreciate that. Ready for employment dates?",
-                    "Thanks for clarifying. Let's continue.",
-                    "Understood. I'll ask for employment dates now."
-                ]
-            },
             "hire_date": {
-                "main_question": "Please provide the applicant's Hire Date in MM/DD/YYYY format.",
+                "main_question": "Please provide the applicant's Hire Date.",
                 "variations": [
-                    "Please provide the applicant's Hire Date in MM/DD/YYYY format.",
-                    "What is the applicant's Hire Date? Please use MM/DD/YYYY format.",
-                    "Could you provide the applicant's Hire Date in MM/DD/YYYY format?"
+                    "Please provide the applicant's Hire Date",
+                    "What is the applicant's Hire Date?",
+                    "Could you provide the applicant's Hire Date"
                 ],
                 "follow_ups": [
                     "Thank you. Next, I'll ask for the Start Date.",
@@ -234,11 +198,11 @@ class ConversationEngine:
                 ]
             },
             "start_date": {
-                "main_question": "Please provide the applicant's Start Date in MM/DD/YYYY format.",
+                "main_question": "Please provide the applicant's Start Date",
                 "variations": [
-                    "Please provide the applicant's Start Date in MM/DD/YYYY format.",
-                    "What is the applicant's Start Date? Please use MM/DD/YYYY format.",
-                    "Could you provide the applicant's Start Date in MM/DD/YYYY format?"
+                    "Please provide the applicant's Start.",
+                    "What is the applicant's Start Date? ",
+                    "Could you provide the applicant's Start Date"
                 ],
                 "follow_ups": [
                     "Thank you. I'll provide your confirmation number next.",
@@ -252,11 +216,11 @@ class ConversationEngine:
                 ]
             },
             "confirmation": {
-                "main_question": "Your confirmation number is 030F9ADCEN. Would you like to hear that number again?",
+                "main_question": "Your confirmation number is 030F9ADCEN.",
                 "variations": [
-                    "Your confirmation number is 030F9ADCEN. Would you like to hear that number again?",
-                    "Your confirmation number is 030F9ADCEN. Should I repeat that number?",
-                    "Your confirmation number is 030F9ADCEN. Would you like me to repeat it?"
+                    "Your confirmation number is 030F9ADCEN.",
+                    "Your confirmation number is 030F9ADCEN.",
+                    "Your confirmation number is 030F9ADCEN."
                 ],
                 "follow_ups": [
                     "Thank you. That completes our call.",
