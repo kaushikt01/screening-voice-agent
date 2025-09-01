@@ -17,6 +17,7 @@ from tts_utils import get_gemma_response
 from tts_router import generate_tts, generate_conversational_voice, generate_emotional_voice
 from conversation_engine import ConversationEngine
 from answer_validator import AnswerValidator
+from silero_vad import get_vad_instance
 from database import (
     init_database, create_session, get_session, update_session_status,
     get_all_questions, get_question, save_answer, get_session_answers,
@@ -240,7 +241,7 @@ async def cleanup_audio():
 async def get_introduction_audio():
     """Generate introduction audio for the call using Gemma and TTS utils"""
     intro_prompt = (
-        "You are an HR assistant calling an employee (Lalit) on behalf of their organization(ADP) to collect brief WOTC eligibility information. You are Sarah"
+        "You are an HR assistant calling an employee (use any random name everytime) on behalf of their organization(ADP) to collect brief WOTC eligibility information. You are Sarah"
         "Write a single, concise, natural spoken greeting from the caller (no options, no lists). "
         "Max 2 short sentences, under 12 seconds. "
         "Make it friendly, professional, and immediately set context that a few short questions will follow."
@@ -757,6 +758,98 @@ async def generate_fallback_audio(request: FallbackAudioRequest):
     except Exception as e:
         print(f"[ERROR] Failed to generate fallback audio: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate fallback audio: {str(e)}")
+
+
+@app.post("/api/vad-detect")
+async def vad_detect_silence(audio_chunk: UploadFile = File(...)):
+    """Detect silence using Silero VAD"""
+    try:
+        # Read audio chunk
+        audio_data = await audio_chunk.read()
+        print(f"[DEBUG] VAD received audio chunk: {len(audio_data)} bytes")
+        
+        # Validate audio data
+        if len(audio_data) == 0:
+            print("[WARNING] Empty audio chunk received, treating as silence")
+            return {
+                "is_silent": True,
+                "speech_confidence": 0.0,
+                "audio_duration": 0.0
+            }
+        
+        # Get VAD instance
+        vad = get_vad_instance()
+        
+        # Convert audio to numpy array (handling WebM and WAV files)
+        import numpy as np
+        import wave
+        import io
+        import subprocess
+        import tempfile
+        import os
+        
+        try:
+            # Try to parse as WAV file first
+            with io.BytesIO(audio_data) as wav_io:
+                with wave.open(wav_io, 'rb') as wav_file:
+                    # Get WAV parameters
+                    channels = wav_file.getnchannels()
+                    sample_width = wav_file.getsampwidth()
+                    sample_rate = wav_file.getframerate()
+                    n_frames = wav_file.getnframes()
+                    
+                    # Read audio data
+                    audio_data_raw = wav_file.readframes(n_frames)
+                    
+                    # Convert to numpy array based on sample width
+                    if sample_width == 2:  # 16-bit
+                        audio_array = np.frombuffer(audio_data_raw, dtype=np.int16).astype(np.float32) / 32768.0
+                    elif sample_width == 1:  # 8-bit
+                        audio_array = np.frombuffer(audio_data_raw, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+                    else:
+                        audio_array = np.frombuffer(audio_data_raw, dtype=np.int16).astype(np.float32) / 32768.0
+                    
+                    # Convert to mono if stereo
+                    if channels == 2:
+                        audio_array = audio_array.reshape(-1, 2).mean(axis=1)
+                    
+                    print(f"[DEBUG] WAV parsed - channels: {channels}, sample_width: {sample_width}, sample_rate: {sample_rate}, frames: {n_frames}")
+                    
+        except Exception as wav_error:
+            print(f"[WARNING] Failed to parse as WAV, trying WebM/MP4: {wav_error}")
+            
+            except Exception as webm_error:
+                print(f"[WARNING] Failed to parse as WAV, treating as silence: {webm_error}")
+                # For now, treat any unparseable audio as silence to prevent errors
+                # This allows the VAD to continue working while we debug the audio format
+                audio_array = np.array([0.0], dtype=np.float32)  # Single sample of silence
+        
+        print(f"[DEBUG] Audio array shape: {audio_array.shape}, duration: {len(audio_array) / 16000.0:.2f}s")
+        
+        # Calculate basic audio stats for debugging
+        rms = np.sqrt(np.mean(audio_array**2))
+        max_amplitude = np.max(np.abs(audio_array))
+        print(f"[DEBUG] Audio stats - RMS: {rms:.4f}, Max: {max_amplitude:.4f}")
+        
+        # Detect silence (1.5 seconds threshold)
+        is_silent = vad.is_silence(audio_array, sample_rate=16000, min_silence_duration=1.5)
+        
+        # Get speech confidence
+        confidence = vad.get_speech_confidence(audio_array, sample_rate=16000)
+        
+        print(f"[DEBUG] VAD Result - Silent: {is_silent}, Confidence: {confidence:.3f}")
+        
+        return {
+            "is_silent": is_silent,
+            "speech_confidence": confidence,
+            "audio_duration": len(audio_array) / 16000.0
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] VAD detection failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"VAD detection failed: {str(e)}")
 
 
 @app.get("/api/debug/answers/{session_id}")

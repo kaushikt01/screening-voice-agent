@@ -101,6 +101,9 @@ function CallInterface() {
   const MAX_LISTEN_DURATION_MS = 20000; // hard cap per question
   const ANSWER_WINDOW_MS = 7000; // static 7s answer window for testing
   const answerWindowTimeoutRef = useRef<number | null>(null);
+  const voiceDetectionTimeoutRef = useRef<number | null>(null);
+  const isRecordingRef = useRef<boolean>(false);
+  const callStatusRef = useRef<string>('idle');
 
   // Sync audio mute/volume with UI state
   useEffect(() => {
@@ -496,6 +499,7 @@ function CallInterface() {
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
+        console.log(`[DEBUG] Audio chunk received: size=${event.data.size} bytes, total chunks: ${audioChunksRef.current.length + 1}`);
         audioChunksRef.current.push(event.data);
       };
 
@@ -519,10 +523,12 @@ function CallInterface() {
         }
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(100); // Generate chunks every 100ms for better VAD responsiveness
       setIsRecording(true);
+      isRecordingRef.current = true; // Set ref immediately for VAD
       setRecordingStartTime(new Date());
       setCallStatus('listening');
+      callStatusRef.current = 'listening'; // Set ref immediately for VAD
 
       // Clear auto-advance timer when user starts speaking
       if (autoAdvanceTimer) {
@@ -530,8 +536,11 @@ function CallInterface() {
         setAutoAdvanceTimer(null);
       }
 
-      // Start silence detection
-      startSilenceDetection();
+      // Start silence detection with a small delay to ensure state is synchronized
+      setTimeout(() => {
+        console.log('[DEBUG] Starting VAD after delay - isRecordingRef:', isRecordingRef.current, 'audioChunks:', audioChunksRef.current.length);
+        startSilenceDetection();
+      }, 100);
       
       // Set a maximum recording time as fallback
       if (answerWindowTimeoutRef.current) {
@@ -541,6 +550,20 @@ function CallInterface() {
         console.log('[DEBUG] Maximum recording time reached, stopping recording');
         stopRecording();
       }, MAX_LISTEN_DURATION_MS);
+
+      // Voice detection timeout: if no voice detected for 5 seconds, move to next question
+      if (voiceDetectionTimeoutRef.current) {
+        clearTimeout(voiceDetectionTimeoutRef.current);
+      }
+      voiceDetectionTimeoutRef.current = window.setTimeout(() => {
+        if (isRecording) {
+          console.log('[DEBUG] Voice detection timeout: no voice detected for 5 seconds, moving to next question');
+          stopRecording();
+          setTimeout(() => {
+            nextQuestion();
+          }, 1000);
+        }
+      }, 5000); // 5 seconds
 
       // Safety timeout: ensure next question comes even if all else fails
       setTimeout(() => {
@@ -558,42 +581,146 @@ function CallInterface() {
     }
   };
 
-  // Start silence detection
+  // Start silence detection using Silero VAD
   const startSilenceDetection = () => {
+    console.log('[DEBUG] startSilenceDetection called');
+    
     if (silenceIntervalRef.current) {
       clearInterval(silenceIntervalRef.current);
     }
 
-    silenceIntervalRef.current = window.setInterval(() => {
-      if (!analyserRef.current || !isRecording) return;
-
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteFrequencyData(dataArray);
+    // Use a longer interval and accumulate more audio before sending
+    silenceIntervalRef.current = window.setInterval(async () => {
+      const currentIsRecording = isRecordingRef.current;
+      const currentAudioChunks = audioChunksRef.current.length;
       
-      // Calculate average volume
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      const threshold = 10; // Adjust this threshold as needed
+      console.log(`[DEBUG] VAD loop running - isRecordingRef: ${currentIsRecording}, audioChunks: ${currentAudioChunks}, callStatusRef: ${callStatusRef.current}`);
       
-      if (average < threshold) {
-        // Silence detected
-        if (!silenceStartRef.current) {
-          silenceStartRef.current = Date.now();
-          setIsSilenceDetected(true);
-        } else if (Date.now() - silenceStartRef.current > 2000) { // 2 seconds of silence
-          console.log('[DEBUG] 2 seconds of silence detected, stopping recording');
-          stopRecording();
-        }
-      } else {
-        // Sound detected, reset silence timer
-        silenceStartRef.current = null;
-        setIsSilenceDetected(false);
+      // Double-check that recording is still active
+      if (!currentIsRecording || currentAudioChunks === 0 || !mediaRecorderRef.current) {
+        console.log(`[DEBUG] VAD loop skipped - isRecordingRef: ${currentIsRecording}, audioChunks: ${currentAudioChunks}, mediaRecorder: ${!!mediaRecorderRef.current}`);
+        return;
       }
-    }, 100); // Check every 100ms
+
+      try {
+        // Create audio chunk from more recent audio data (last 3 chunks for better analysis)
+        const recentChunks = audioChunksRef.current.slice(-3);
+        console.log(`[DEBUG] Recent chunks: ${recentChunks.length}, total chunks: ${audioChunksRef.current.length}`);
+        
+        const audioChunk = new Blob(recentChunks, { type: 'audio/wav' });
+        console.log(`[DEBUG] Audio chunk created: size=${audioChunk.size} bytes, type=${audioChunk.type}`);
+        
+        // Only send if chunk is large enough (at least 0.3 seconds of audio)
+        if (audioChunk.size < 5000) { // Roughly 0.3 seconds of 16kHz audio
+          console.log('[DEBUG] Audio chunk too small, skipping VAD analysis');
+          return;
+        }
+        
+        console.log(`[DEBUG] Sending audio chunk to VAD (size: ${audioChunk.size} bytes, chunks: ${recentChunks.length})`);
+        
+        // Send to Silero VAD for analysis
+        const vadResult = await apiService.detectSilence(audioChunk);
+        
+        console.log(`[DEBUG] VAD Result - Silent: ${vadResult.is_silent}, Confidence: ${vadResult.speech_confidence.toFixed(3)}, Duration: ${vadResult.audio_duration.toFixed(2)}s`);
+        
+        if (vadResult.is_silent) {
+          // Silence detected by Silero VAD
+          if (!silenceStartRef.current) {
+            silenceStartRef.current = Date.now();
+            setIsSilenceDetected(true);
+            console.log('[DEBUG] Silero VAD detected silence, starting timer');
+          } else if (Date.now() - silenceStartRef.current > 1500) { // 1.5 seconds of silence
+            console.log('[DEBUG] Silero VAD: 1.5 seconds of silence detected, stopping recording');
+            stopRecording();
+          }
+        } else {
+          // Speech detected, reset silence timer and extend voice detection timeout
+          if (silenceStartRef.current) {
+            console.log('[DEBUG] Silero VAD detected speech, resetting silence timer');
+          }
+          silenceStartRef.current = null;
+          setIsSilenceDetected(false);
+          
+          // Reset voice detection timeout when speech is detected
+          if (voiceDetectionTimeoutRef.current) {
+            clearTimeout(voiceDetectionTimeoutRef.current);
+          }
+          voiceDetectionTimeoutRef.current = window.setTimeout(() => {
+            if (isRecording) {
+              console.log('[DEBUG] Voice detection timeout: no voice detected for 5 seconds, moving to next question');
+              stopRecording();
+              setTimeout(() => {
+                nextQuestion();
+              }, 1000);
+            }
+          }, 5000); // Reset to 5 seconds
+        }
+              } catch (error) {
+          console.error('[ERROR] VAD detection failed:', error);
+          
+          // If VAD fails repeatedly, stop the loop to prevent infinite errors
+          if (error instanceof Error && (error.message.includes('Failed to fetch') || error.message.includes('CORS'))) {
+            console.log('[DEBUG] VAD backend unavailable, stopping VAD loop to prevent infinite errors');
+            if (silenceIntervalRef.current) {
+              clearInterval(silenceIntervalRef.current);
+              silenceIntervalRef.current = null;
+            }
+            return;
+          }
+          
+          // Fallback to basic volume detection if VAD fails
+          if (analyserRef.current) {
+            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            const threshold = 10;
+            
+            if (average < threshold) {
+              if (!silenceStartRef.current) {
+                silenceStartRef.current = Date.now();
+                setIsSilenceDetected(true);
+              } else if (Date.now() - silenceStartRef.current > 2000) {
+                console.log('[DEBUG] Fallback: 2 seconds of silence detected, stopping recording');
+                // Clear the VAD interval first to prevent infinite loop
+                if (silenceIntervalRef.current) {
+                  clearInterval(silenceIntervalRef.current);
+                  silenceIntervalRef.current = null;
+                  console.log('[DEBUG] Cleared VAD interval in fallback');
+                }
+                stopRecording();
+              }
+            } else {
+              silenceStartRef.current = null;
+              setIsSilenceDetected(false);
+              
+              // Reset voice detection timeout when speech is detected in fallback mode
+              if (voiceDetectionTimeoutRef.current) {
+                clearTimeout(voiceDetectionTimeoutRef.current);
+              }
+              voiceDetectionTimeoutRef.current = window.setTimeout(() => {
+                if (isRecording) {
+                  console.log('[DEBUG] Fallback voice detection timeout: no voice detected for 5 seconds, moving to next question');
+                  stopRecording();
+                  setTimeout(() => {
+                    nextQuestion();
+                  }, 1000);
+                }
+                              }, 5000); // Reset to 5 seconds
+            }
+          }
+        }
+    }, 800); // Check every 800ms (more frequent for better responsiveness)
   };
 
   // Stop voice recording
   const stopRecording = () => {
     console.log('[DEBUG] stopRecording called');
+    
+    // Prevent multiple simultaneous stopRecording calls
+    if (!isRecording || !mediaRecorderRef.current) {
+      console.log('[DEBUG] stopRecording called but not recording or no media recorder');
+      return;
+    }
     
     if (mediaRecorderRef.current && isRecording) {
       console.log('[DEBUG] Stopping media recorder');
@@ -614,7 +741,9 @@ function CallInterface() {
       }
       
       setIsRecording(false);
+      isRecordingRef.current = false; // Clear ref immediately for VAD
       setCallStatus('processing');
+      callStatusRef.current = 'processing'; // Clear ref immediately for VAD
 
       // Stop analyser loop
       if (silenceIntervalRef.current) {
@@ -628,6 +757,13 @@ function CallInterface() {
         clearTimeout(answerWindowTimeoutRef.current);
         answerWindowTimeoutRef.current = null;
         console.log('[DEBUG] Cleared answer window timeout');
+      }
+
+      // Clear voice detection timeout
+      if (voiceDetectionTimeoutRef.current) {
+        clearTimeout(voiceDetectionTimeoutRef.current);
+        voiceDetectionTimeoutRef.current = null;
+        console.log('[DEBUG] Cleared voice detection timeout');
       }
 
       // Close audio tracks
@@ -702,9 +838,6 @@ function CallInterface() {
         return;
       }
       
-      // Mark this question as answered immediately to prevent race conditions
-      answeredQuestionsRef.current.add(currentQuestionValue);
-      
       // Validate session before submitting
       const sessionValid = await validateSession();
       if (!sessionValid) {
@@ -732,6 +865,9 @@ function CallInterface() {
         // Don't advance to next question - let user try again
         return;
       }
+      
+      // Mark this question as answered only after successful validation
+      answeredQuestionsRef.current.add(currentQuestionValue);
       
       // Calculate analytics
       const responseTime = questionStartTime ? new Date().getTime() - questionStartTime.getTime() : 0;
@@ -842,6 +978,7 @@ function CallInterface() {
     
     try {
       setCallStatus('agent-speaking');
+      callStatusRef.current = 'agent-speaking';
       
       // Stop any current audio
       if (currentAudio) {
@@ -895,6 +1032,7 @@ function CallInterface() {
         console.log(`[DEBUG] Audio finished playing for question ${question.id}, switching to listening mode`);
         console.log(`[DEBUG] State check before starting recording - sessionId: ${currentSessionId}, totalQuestions: ${currentTotalQuestions}, questions.length: ${currentQuestions.length}`);
         setCallStatus('connected');
+        callStatusRef.current = 'connected';
         setQuestionStartTime(new Date());
         
         // Check if we need to restore state from localStorage
@@ -954,6 +1092,7 @@ function CallInterface() {
   const playFallbackMessage = async (message: string) => {
     try {
       setCallStatus('agent-speaking');
+      callStatusRef.current = 'agent-speaking';
       setFallbackMessage(message);
       
       // Stop any current audio
@@ -1000,6 +1139,7 @@ function CallInterface() {
               console.log('Fallback audio finished, returning to question');
               setFallbackMessage(null);
               setCallStatus('connected');
+              callStatusRef.current = 'connected';
               setQuestionStartTime(new Date());
               // Auto-start recording after fallback message
               startRecording();
@@ -1047,6 +1187,7 @@ function CallInterface() {
   const playIntroduction = async (loadedQuestions: QuestionResponse[]) => {
     try {
       setCallStatus('agent-speaking');
+      callStatusRef.current = 'agent-speaking';
       
       // Stop any current audio
       if (currentAudio) {
@@ -1135,6 +1276,7 @@ function CallInterface() {
   const startCall = async () => {
     console.log('[DEBUG] startCall called');
     setCallStatus('calling');
+    callStatusRef.current = 'calling';
     setIsLoading(true);
     
     // Clear any previous call state from localStorage
@@ -1201,6 +1343,7 @@ function CallInterface() {
       console.error('Failed to start call:', err);
       setError('Failed to start call');
       setCallStatus('ended');
+      callStatusRef.current = 'ended';
       setIsLoading(false);
     }
   };
@@ -1208,6 +1351,7 @@ function CallInterface() {
   const endCall = () => {
     console.log('[DEBUG] endCall called, clearing localStorage');
     setCallStatus('ended');
+    callStatusRef.current = 'ended';
     
     // Clear localStorage
     localStorage.removeItem('callSessionId');
@@ -1435,17 +1579,26 @@ function CallInterface() {
                     {isRecording ? <MicOff className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
                   </button>
                   
+                  {/* Silero VAD Status and Manual Stop */}
                   {isRecording && (
-                    <button
-                      onClick={stopRecording}
-                      disabled={callStatus === 'processing'}
-                      className={`p-4 rounded-full transition-colors ${
-                        callStatus === 'processing' ? 'opacity-50 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'
-                      }`}
-                      title="Stop Recording"
-                    >
-                      <Circle className="w-6 h-6 text-white" />
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 rounded-full">
+                        <Circle className="w-3 h-3 text-blue-400 fill-current animate-pulse" />
+                        <span className="text-xs text-blue-200">Silero VAD Active</span>
+                      </div>
+                      
+                      {/* Manual stop button for debugging */}
+                      <button
+                        onClick={stopRecording}
+                        disabled={callStatus === 'processing'}
+                        className={`p-2 rounded-full transition-colors ${
+                          callStatus === 'processing' ? 'opacity-50 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'
+                        }`}
+                        title="Manual Stop (Debug)"
+                      >
+                        <Circle className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
                   )}
                   
                   <button

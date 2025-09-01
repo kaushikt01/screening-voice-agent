@@ -135,61 +135,10 @@ Be very strict - if in doubt, mark as INVALID."""
         else:
             return "yes_no"
     
-    def _parse_validation_response(self, response: str) -> bool:
-        """Parse the LLM response to determine if answer is valid."""
-        response_clean = response.strip().upper()
-        
-        # Look for VALID/INVALID keywords
-        if "VALID" in response_clean:
-            return True
-        elif "INVALID" in response_clean:
-            return False
-        
-        # If LLM response is unclear, use additional validation logic
-        return self._additional_validation_logic(response_clean)
-    
-    def _additional_validation_logic(self, response: str) -> bool:
-        """Additional validation logic when LLM response is unclear."""
-        # Common invalid responses that should always be marked as invalid
-        invalid_phrases = [
-            "I DON'T KNOW", "I DONT KNOW", "DON'T KNOW", "DONT KNOW",
-            "I'M NOT SURE", "IM NOT SURE", "NOT SURE", "UNSURE",
-            "MAYBE", "PERHAPS", "I THINK", "I GUESS",
-            "WHAT DO YOU MEAN", "CAN YOU REPEAT", "REPEAT",
-            "HELLO", "HI", "HEY", "GOODBYE", "BYE",
-            "HOW ARE YOU", "NICE TO MEET YOU", "THANK YOU"
-        ]
-        
-        for phrase in invalid_phrases:
-            if phrase in response:
-                return False
-        
-        # If response is very short (less than 3 words), likely invalid
-        if len(response.split()) < 3:
-            return False
-        
-        # Default to invalid if unclear
-        return False
-    
     def _generate_dynamic_fallback(self, question_id: int, question_text: str, answer_text: str, is_valid: bool) -> str:
         """Generate dynamic fallback message based on question context and validation result."""
         try:
-            # Use LLM to generate contextual fallback message
-            fallback_prompt = f"""The user gave an inappropriate response to a question. Generate a helpful, friendly message asking them to provide a better answer.
-
-Question: "{question_text}"
-User's response: "{answer_text}"
-Validation result: {"INVALID" if not is_valid else "VALID"}
-
-Generate a short, friendly message (1-2 sentences) that:
-1. Acknowledges their response
-2. Clearly explains what you need
-3. Encourages them to try again
-
-Keep it conversational and helpful. Don't be robotic."""
-
-            # For now, use template-based fallback to avoid multiple LLM calls
-            # In a production system, you could use the LLM here too
+            # Use template-based fallback to avoid multiple LLM calls
             question_type = self._get_question_type(question_id, question_text)
             return self.fallback_templates.get(question_type, self.fallback_templates["default"])
             

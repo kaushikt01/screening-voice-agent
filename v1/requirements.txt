@@ -10,3 +10,4 @@ aiofiles==23.2.1
 requests==2.31.0
 spacy==3.7.2
 tts==0.22.0
+numpy>=1.21.0

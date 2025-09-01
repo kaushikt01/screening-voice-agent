@@ -170,7 +170,27 @@ class ApiService {
     return this.request(`/session/${sessionId}/analytics`);
   }
 
+  async detectSilence(audioChunk: Blob): Promise<{
+    is_silent: boolean;
+    speech_confidence: number;
+    audio_duration: number;
+  }> {
+    const formData = new FormData();
+    formData.append('audio_chunk', audioChunk);
 
+    const response = await fetch(`${API_BASE_URL}/vad-detect`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+    });
+
+    if (!response.ok) {
+      throw new Error(`VAD detection failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  }
 
   async saveCallAnalytics(sessionId: string, analytics: CallAnalytics[]): Promise<{ success: boolean; message: string }> {
     const submission: CallAnalyticsSubmission = {
