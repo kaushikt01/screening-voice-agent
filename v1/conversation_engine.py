@@ -36,10 +36,10 @@ class ConversationEngine:
             "ssn": {
                 "main_question": "Please share your Social Security Number.",
                 "variations": [
-                    "Please share your Social Security Number. If you'd rather skip for now, just say 'skip'.",
-                    "Could you provide your SSN? You can say 'skip' if you prefer not to share it right now.",
-                    "What is your Social Security Number? You're welcome to say 'skip'.",
-                    "If you're comfortable, please provide your SSN; otherwise say 'skip'."
+                    "Please provide your Social Security Number.",
+                    "I need your Social Security Number to proceed.",
+                    "What is your Social Security Number?",
+                    "Could you share your SSN with me?"
                 ],
                 "follow_ups": [
                     "Thanks. Let's confirm your address next.",

@@ -91,9 +91,9 @@ async def init_database():
             },
             {
                 "id": 2,
-                "question_text": "Please share your Social Security Number. If you'd rather skip for now, just say 'skip'.",
+                "question_text": "Please provide your Social Security Number.",
                 "category": "personal_info",
-                "is_required": False,
+                "is_required": True,
                 "order": 2,
                 "metadata": {"type": "ssn_collection", "sensitive": True}
             },
