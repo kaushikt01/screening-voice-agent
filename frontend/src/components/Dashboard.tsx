@@ -41,17 +41,25 @@ function Dashboard() {
     loadDashboardData();
   }, []);
 
-  const currentStats = dashboardData ? {
-    totalCalls: dashboardData.total_sessions,
-    answeredCalls: dashboardData.total_answers,
-    averageResponses: dashboardData.avg_answer_length,
-    conversionRate: dashboardData.total_sessions > 0 ? (dashboardData.total_answers / dashboardData.total_sessions) * 100 : 0,
-    callsAttempted: dashboardData.total_sessions,
-    callsAnswered: dashboardData.total_answers,
-    completeResponses: Math.floor(dashboardData.total_answers * 0.8),
-    partialResponses: Math.floor(dashboardData.total_answers * 0.15),
-    minimalResponses: Math.floor(dashboardData.total_answers * 0.05)
-  } : {
+  const currentStats = dashboardData ? (() => {
+    // Ensure totalCalls >= answeredCalls
+    const totalCalls = Math.max(dashboardData.total_sessions, dashboardData.total_answers);
+    const answeredCalls = dashboardData.total_answers;
+    // Calculate conversion rate and cap at 70%
+    let conversionRate = totalCalls > 0 ? (answeredCalls / totalCalls) * 100 : 0;
+    if (conversionRate > 70) conversionRate = 70;
+    return {
+      totalCalls,
+      answeredCalls,
+      averageResponses: dashboardData.avg_answer_length,
+      conversionRate,
+      callsAttempted: totalCalls,
+      callsAnswered: answeredCalls,
+      completeResponses: Math.floor(answeredCalls * 0.8),
+      partialResponses: Math.floor(answeredCalls * 0.15),
+      minimalResponses: Math.floor(answeredCalls * 0.05)
+    };
+  })() : {
     totalCalls: 0,
     answeredCalls: 0,
     averageResponses: 0,

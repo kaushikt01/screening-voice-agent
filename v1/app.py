@@ -238,7 +238,7 @@ async def cleanup_audio():
 async def get_introduction_audio():
     """Generate introduction audio for the call using Gemma and TTS utils"""
     intro_prompt = (
-    "You are Sarah, an HR assistant calling on behalf of ADP. "
+    "You are Sarah, an HR assistant calling on behalf of Amazon "
     "Craft a single, natural spoken greeting for an employee (no name available). "
     "The greeting must be concise (max 3 short sentences, under 15 seconds), friendly, and professional. "
     "It should clearly set context that you’ll ask a few brief WOTC eligibility questions next. "
